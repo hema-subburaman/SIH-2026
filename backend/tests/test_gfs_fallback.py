@@ -295,3 +295,137 @@ async def test_gfs_provider_get_forecast_direct_and_caching():
         resp2 = await provider.get_forecast(city="Chennai", lat=13.0827, lon=80.2707, days=5)
         assert mock_common_call.call_count == 1  # No additional network call
         assert resp2.cached is True
+
+
+def _create_mock_grib2_response_bytes(temp_k=303.15, rh=65.0, u=3.0, v=4.0, pres=101200.0) -> bytes:
+    """Builds synthetic GRIB2 binary subgrid messages containing TMP, RH, UGRD, VGRD, PRES."""
+    import struct
+
+    def _pack_subgrid(disc, cat, num, ref_val):
+        s0 = b"GRIB\x00\x00" + bytes([disc, 2]) + struct.pack(">Q", 60)
+        s4 = struct.pack(">IB", 16, 4) + b"\x00" * 4 + bytes([cat, num]) + b"\x00" * 5
+        s5 = struct.pack(">IB", 20, 5) + b"\x00" * 6 + struct.pack(">f", ref_val) + b"\x00" * 4
+        return s0 + s4 + s5 + b"7777"
+
+    return (
+        _pack_subgrid(0, 0, 0, temp_k)  # TMP 2m
+        + _pack_subgrid(0, 1, 1, rh)     # RH 2m
+        + _pack_subgrid(0, 2, 2, u)      # UGRD 10m
+        + _pack_subgrid(0, 2, 3, v)      # VGRD 10m
+        + _pack_subgrid(0, 3, 0, pres)   # PRES surface
+    )
+
+
+# 7. Test that parse_grib2_subgrid decodes Section 4 variables and Section 5 reference floats accurately
+def test_parse_grib2_subgrid_decodes_variables():
+    from app.providers.gfs_provider import parse_grib2_subgrid
+
+    data = _create_mock_grib2_response_bytes(temp_k=303.15, rh=72.0, u=3.0, v=4.0, pres=101250.0)
+    vars_dict = parse_grib2_subgrid(data)
+
+    assert (0, 0, 0) in vars_dict
+    assert abs(vars_dict[(0, 0, 0)] - 303.15) < 0.01
+    assert abs(vars_dict[(0, 1, 1)] - 72.0) < 0.01
+    assert abs(vars_dict[(0, 2, 2)] - 3.0) < 0.01
+    assert abs(vars_dict[(0, 2, 3)] - 4.0) < 0.01
+    assert abs(vars_dict[(0, 3, 0)] - 101250.0) < 1.0
+
+
+# 8. GFS fallback does NOT call api.open-meteo.com/v1/gfs under any circumstance
+@pytest.mark.asyncio
+async def test_gfs_fallback_never_calls_open_meteo_endpoint():
+    """
+    CRITICAL ARCHITECTURAL GUARANTEE:
+    Verifies that GFSProvider queries NOAA NOMADS (nomads.ncep.noaa.gov) and NEVER
+    calls api.open-meteo.com/v1/gfs or any Open-Meteo URL when executing fallback.
+    """
+    provider = GFSProvider()
+    assert provider.nomads_enabled is True
+
+    captured_urls = []
+    mock_grib_data = _create_mock_grib2_response_bytes(temp_k=303.15, rh=70.0)
+
+    class MockAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+        async def get(self, url, **kwargs):
+            captured_urls.append(str(url))
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.content = mock_grib_data
+            return mock_resp
+
+    with patch("httpx.AsyncClient", new=MockAsyncClient):
+        res = await provider.get_forecast(city="Chennai", lat=13.0827, lon=80.2707, days=2)
+
+        assert len(captured_urls) > 0
+        for url in captured_urls:
+            # Must query official NOAA NOMADS
+            assert "nomads.ncep.noaa.gov" in url
+            # Must NEVER query Open-Meteo
+            assert "api.open-meteo.com" not in url
+            assert "open-meteo.com" not in url
+
+        assert res.source == "NOAA Global Forecast System (GFS 0.25°) Fallback"
+        assert res.location.name == "Chennai"
+        # 303.15 K -> 30.0 C
+        assert res.current.temperature == 30.0
+
+
+# 9. End-to-end: Open-Meteo 429 triggers direct NOAA NOMADS fallback with correct schema
+@pytest.mark.asyncio
+async def test_end_to_end_open_meteo_429_triggers_direct_nomads_gfs():
+    """
+    End-to-end integration test:
+    When Open-Meteo returns HTTP 429, WeatherService automatically falls back
+    to GFSProvider via NOAA NOMADS, preserving NormalizedWeatherResponse schema
+    with truthful source attribution and no fake data.
+    """
+    mock_grib_data = _create_mock_grib2_response_bytes(temp_k=304.65, rh=65.0, u=3.0, v=4.0, pres=101000.0)
+
+    class MockAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            pass
+
+        async def get(self, url, **kwargs):
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.content = mock_grib_data
+            return mock_resp
+
+    with patch.object(
+        weather_service.open_meteo,
+        "get_forecast",
+        new_callable=AsyncMock,
+        side_effect=UpstreamRateLimitError(
+            message="Open-Meteo rate-limited (HTTP 429)", retry_after=30, provider="Open-Meteo"
+        ),
+    ), patch("httpx.AsyncClient", new=MockAsyncClient):
+        res = await weather_service.get_forecast(city="Chennai", lat=13.0827, lon=80.2707, days=2)
+
+        assert isinstance(res, NormalizedWeatherResponse)
+        assert res.source == "NOAA Global Forecast System (GFS 0.25°) Fallback"
+        assert "NOAA NCEP GFS 0.25°" in res.attribution_notes
+        # 304.65 K - 273.15 = 31.5 C
+        assert res.current.temperature == 31.5
+        assert res.current.humidity == 65
+        # Wind speed sqrt(3^2 + 4^2) = 5.0 m/s
+        assert res.current.wind_speed == 5.0
+        assert res.current.pressure == 1010.0
+        assert len(res.forecast) > 0
+        for f in res.forecast:
+            assert f.condition_code in ["Clouds", "Rain", "Thunderstorm", "Clear"]
+

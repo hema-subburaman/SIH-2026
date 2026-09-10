@@ -1,7 +1,10 @@
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import time
+import math
+import struct
+import asyncio
 import logging
 import httpx
 from app.providers.base import NWPProvider, ForecastProvider, WeatherProvider, UpstreamRateLimitError
@@ -28,6 +31,42 @@ _gfs_cache: Dict[str, CacheEntry] = {}
 def clear_gfs_cache() -> None:
     """Clears GFS cache (used in test suites)."""
     _gfs_cache.clear()
+
+
+def parse_grib2_subgrid(data: bytes) -> Dict[tuple, float]:
+    """
+    Decodes single-point GRIB2 binary subgrid messages returned by NOAA NOMADS GRIB Filter.
+    Extracts Section 4 product definitions and Section 5 reference floating-point values
+    using standard library struct (zero external C-library dependency).
+    """
+    messages = []
+    idx = 0
+    while True:
+        pos = data.find(b"GRIB", idx)
+        if pos == -1:
+            break
+        end_pos = data.find(b"7777", pos)
+        if end_pos == -1:
+            break
+        messages.append(data[pos : end_pos + 4])
+        idx = end_pos + 4
+
+    vars_dict: Dict[tuple, float] = {}
+    for msg in messages:
+        pos = 16
+        disc = msg[6]
+        cat, num, ref_val = None, None, None
+        while pos < len(msg) - 4:
+            sec_len, sec_num = struct.unpack(">IB", msg[pos : pos + 5])
+            sec_bytes = msg[pos : pos + sec_len]
+            if sec_num == 4 and len(sec_bytes) >= 11:
+                cat, num = sec_bytes[9], sec_bytes[10]
+            elif sec_num == 5 and len(sec_bytes) >= 15:
+                ref_val = struct.unpack(">f", sec_bytes[11:15])[0]
+            pos += sec_len
+        if cat is not None and num is not None and ref_val is not None:
+            vars_dict[(disc, cat, num)] = ref_val
+    return vars_dict
 
 
 class GFSProvider(NWPProvider, ForecastProvider, WeatherProvider):
@@ -246,99 +285,30 @@ class GFSProvider(NWPProvider, ForecastProvider, WeatherProvider):
             except Exception as ex:
                 logger.warning(f"Failed to connect to GFS endpoint {self.endpoint}: {ex}")
 
-        # Path 3: NOAA GFS via Open Data NOMADS API (using Open-Meteo GFS seamless gateway)
+        # Path 3: NOAA GFS direct from NOAA NCEP NOMADS Operational GRIB Filter Service
+        # Genuinely independent of Open-Meteo. Uses official nomads.ncep.noaa.gov.
         if self.nomads_enabled:
             try:
-                gfs_url = "https://api.open-meteo.com/v1/gfs"
-                params = {
-                    "latitude": lat,
-                    "longitude": lon,
-                    "hourly": "temperature_2m,relative_humidity_2m,precipitation,surface_pressure,wind_speed_10m,wind_direction_10m,cape",
-                    "forecast_days": min(days, 7),
-                    "timezone": "auto",
-                }
-                async with httpx.AsyncClient(timeout=10.0) as client:
-                    resp = await client.get(gfs_url, params=params)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        hourly = data.get("hourly", {})
-                        times = hourly.get("time", [])
-                        temps = hourly.get("temperature_2m", [])
-                        rhs = hourly.get("relative_humidity_2m", [])
-                        precips = hourly.get("precipitation", [])
-                        pressures = hourly.get("surface_pressure", [])
-                        wind_spds = hourly.get("wind_speed_10m", [])
-                        wind_dirs = hourly.get("wind_direction_10m", [])
-                        capes = hourly.get("cape", [])
-
-                        items: List[CommonForecastItem] = []
-                        # Take 3-hourly intervals to match GFS standard output resolution
-                        for i in range(0, len(times), 3):
-                            t_val = times[i]
-                            temp_v = temps[i] if i < len(temps) and temps[i] is not None else None
-                            rh_v = int(rhs[i]) if i < len(rhs) and rhs[i] is not None else None
-                            prec_v = precips[i] if i < len(precips) and precips[i] is not None else None
-                            press_v = pressures[i] if i < len(pressures) and pressures[i] is not None else None
-                            w_spd_v = wind_spds[i] if i < len(wind_spds) and wind_spds[i] is not None else None
-                            w_dir_v = wind_dirs[i] if i < len(wind_dirs) and wind_dirs[i] is not None else None
-                            cape_v = capes[i] if i < len(capes) and capes[i] is not None else None
-
-                            avail = []
-                            if temp_v is not None:
-                                avail.append("temperature")
-                            if prec_v is not None:
-                                avail.append("precipitation")
-                            if w_spd_v is not None:
-                                avail.append("wind_speed")
-                            if w_dir_v is not None:
-                                avail.append("wind_direction")
-                            if rh_v is not None:
-                                avail.append("humidity")
-                            if press_v is not None:
-                                avail.append("pressure")
-                            if cape_v is not None:
-                                avail.append("cape")
-
-                            items.append(
-                                CommonForecastItem(
-                                    provider="gfs",
-                                    model=self.model_name,
-                                    source="NOAA NCEP GFS Open Data",
-                                    run_time=cycle,
-                                    forecast_time=t_val,
-                                    latitude=lat,
-                                    longitude=lon,
-                                    temperature=temp_v,
-                                    feels_like=temp_v,
-                                    humidity=rh_v,
-                                    precipitation=prec_v,
-                                    precipitation_probability=None,
-                                    wind_speed=round(w_spd_v / 3.6, 1) if w_spd_v is not None else None,  # km/h to m/s
-                                    wind_direction=w_dir_v,
-                                    pressure=press_v,
-                                    visibility=None,
-                                    condition="Thunderstorm Risk" if (cape_v and cape_v > 1000) else "GFS Forecast",
-                                    cape=cape_v,
-                                    available_variables=avail,
-                                )
-                            )
-
-                        return CommonModelForecastResponse(
-                            provider="gfs",
-                            model=self.model_name,
-                            source="NOAA NCEP GFS 0.25° Global Model",
-                            available=True,
-                            configured=True,
-                            status="Available / Operational",
-                            resolution="0.25° horizontal grid (~28 km)",
-                            run_time=cycle,
-                            latitude=lat,
-                            longitude=lon,
-                            forecast_items=items,
-                            attribution_notes="NOAA NCEP operational NWP forecast.",
-                        )
+                nomads_items = await self._fetch_nomads_forecast(lat=lat, lon=lon, days=days)
+                if nomads_items and len(nomads_items) > 0:
+                    return CommonModelForecastResponse(
+                        provider="gfs",
+                        model=self.model_name,
+                        source="NOAA NCEP NOMADS Operational Server",
+                        available=True,
+                        configured=True,
+                        status="Available / Operational",
+                        resolution="0.25° horizontal grid (~28 km)",
+                        run_time=nomads_items[0].run_time or cycle,
+                        latitude=lat,
+                        longitude=lon,
+                        forecast_items=nomads_items,
+                        attribution_notes="NOAA NCEP operational GFS 0.25° NWP model forecast directly retrieved from NOAA NOMADS GRIB Filter.",
+                    )
+                else:
+                    logger.warning("NOAA NOMADS GRIB Filter returned no items.")
             except Exception as ex:
-                logger.warning(f"NOAA GFS Open Data query failed: {ex}")
+                logger.warning(f"Direct NOAA NOMADS query failed: {ex}")
 
         # If all sources fail or unconfigured: return structured unavailable state (NO FAKE DATA)
         return CommonModelForecastResponse(
@@ -355,6 +325,146 @@ class GFSProvider(NWPProvider, ForecastProvider, WeatherProvider):
             forecast_items=[],
             attribution_notes="Live NOAA GFS data is temporarily unavailable or unconfigured.",
         )
+
+    async def _fetch_nomads_step(
+        self,
+        client: httpx.AsyncClient,
+        date_str: str,
+        cycle_str: str,
+        hour: int,
+        grid_lat: float,
+        grid_lon: float,
+    ) -> tuple[int, Optional[Dict[tuple, float]]]:
+        """Fetches a single forecast lead-hour subgrid from NOAA NOMADS GRIB Filter."""
+        file_name = f"gfs.t{cycle_str}z.pgrb2.0p25.f{hour:03d}"
+        url = (
+            f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl"
+            f"?dir=%2Fgfs.{date_str}%2F{cycle_str}%2Fatmos"
+            f"&file={file_name}"
+            f"&var_TMP=on&lev_2_m_above_ground=on"
+            f"&var_RH=on"
+            f"&var_UGRD=on&var_VGRD=on&lev_10_m_above_ground=on"
+            f"&var_PRES=on&lev_surface=on"
+            f"&subregion=on&leftlon={grid_lon}&rightlon={grid_lon}&toplat={grid_lat}&bottomlat={grid_lat}"
+        )
+        try:
+            r = await client.get(url)
+            if r.status_code == 200 and b"GRIB" in r.content:
+                vals = parse_grib2_subgrid(r.content)
+                return hour, vals
+            return hour, None
+        except Exception as e:
+            logger.debug(f"NOMADS step +{hour} fetch error: {e}")
+            return hour, None
+
+    async def _fetch_nomads_forecast(
+        self, lat: float, lon: float, days: int = 5
+    ) -> Optional[List[CommonForecastItem]]:
+        """
+        Queries NOAA NOMADS GRIB Filter directly for real GFS numerical model data.
+        Zero synthetic or fabricated data.
+        """
+        grid_lat = round(lat * 4.0) / 4.0
+        # NOMADS GFS uses 0 to 360 longitude (or standard -180 to 180 depending on coordinate)
+        grid_lon = (lon + 360.0) % 360.0 if lon < 0 else round(lon * 4.0) / 4.0
+
+        now = datetime.now(timezone.utc)
+        today_str = now.strftime("%Y%m%d")
+        yesterday_str = (now - timedelta(days=1)).strftime("%Y%m%d")
+
+        if now.hour >= 22:
+            candidates = [(today_str, "18"), (today_str, "12"), (today_str, "06"), (today_str, "00")]
+        elif now.hour >= 16:
+            candidates = [(today_str, "12"), (today_str, "06"), (today_str, "00"), (yesterday_str, "18")]
+        elif now.hour >= 10:
+            candidates = [(today_str, "06"), (today_str, "00"), (yesterday_str, "18"), (yesterday_str, "12")]
+        elif now.hour >= 4:
+            candidates = [(today_str, "00"), (yesterday_str, "18"), (yesterday_str, "12"), (yesterday_str, "06")]
+        else:
+            candidates = [(yesterday_str, "18"), (yesterday_str, "12"), (yesterday_str, "06"), (yesterday_str, "00")]
+
+        # Determine synoptic lead hours based on requested forecast days (6-hourly steps)
+        lead_hours = [0, 6, 12, 18, 24, 30, 36, 42, 48, 60, 72, 84, 96, 120][: min(days * 3, 12)]
+
+        for date_str, cycle_str in candidates:
+            try:
+                run_dt = datetime.strptime(f"{date_str} {cycle_str}:00", "%Y%m%d %H:%M").replace(tzinfo=timezone.utc)
+                async with httpx.AsyncClient(timeout=8.0) as client:
+                    # Probe f000 to verify run cycle availability on NOMADS
+                    h0, vals0 = await self._fetch_nomads_step(client, date_str, cycle_str, 0, grid_lat, grid_lon)
+                    if not vals0:
+                        continue  # Try previous cycle
+
+                    remaining_hours = [h for h in lead_hours if h != 0]
+                    tasks = [
+                        self._fetch_nomads_step(client, date_str, cycle_str, h, grid_lat, grid_lon)
+                        for h in remaining_hours
+                    ]
+                    results = await asyncio.gather(*tasks)
+
+                    all_results = [(0, vals0)] + results
+                    items: List[CommonForecastItem] = []
+
+                    for hour, vals in sorted(all_results, key=lambda x: x[0]):
+                        if not vals:
+                            continue
+                        t_k = vals.get((0, 0, 0))
+                        rh = vals.get((0, 1, 1))
+                        u = vals.get((0, 2, 2))
+                        v = vals.get((0, 2, 3))
+                        p = vals.get((0, 3, 0))
+
+                        temp_c = round(t_k - 273.15, 1) if t_k is not None else None
+                        rh_val = int(round(rh)) if rh is not None else None
+                        w_spd = round(math.sqrt(u**2 + v**2), 1) if (u is not None and v is not None) else None
+                        w_dir = round((math.degrees(math.atan2(-u, -v)) + 360) % 360, 1) if (u is not None and v is not None) else None
+                        press_hpa = round(p / 100.0, 1) if p is not None else None
+
+                        f_time_str = (run_dt + timedelta(hours=hour)).strftime("%Y-%m-%d %H:%M:%S")
+
+                        avail = []
+                        if temp_c is not None:
+                            avail.append("temperature")
+                        if rh_val is not None:
+                            avail.append("humidity")
+                        if w_spd is not None:
+                            avail.append("wind_speed")
+                        if w_dir is not None:
+                            avail.append("wind_direction")
+                        if press_hpa is not None:
+                            avail.append("pressure")
+
+                        items.append(
+                            CommonForecastItem(
+                                provider="gfs",
+                                model=self.model_name,
+                                source="NOAA NCEP NOMADS Operational Model Server",
+                                run_time=f"{cycle_str}Z",
+                                forecast_time=f_time_str,
+                                latitude=lat,
+                                longitude=lon,
+                                temperature=temp_c,
+                                feels_like=temp_c,
+                                humidity=rh_val,
+                                precipitation=None,
+                                precipitation_probability=None,
+                                wind_speed=w_spd,
+                                wind_direction=w_dir,
+                                pressure=press_hpa,
+                                visibility=None,
+                                condition="GFS Model Forecast",
+                                cape=None,
+                                available_variables=avail,
+                            )
+                        )
+
+                    if len(items) >= 1:
+                        return items
+            except Exception as e:
+                logger.warning(f"Error fetching NOAA NOMADS cycle {date_str} {cycle_str}Z: {e}")
+                continue
+
+        return None
 
     async def get_forecast(
         self,
