@@ -111,52 +111,74 @@ export default function App() {
     };
   }, []);
 
-  // Load weather and risk analysis whenever city or coordinates change
+  // Load weather forecast whenever city or coordinates change
   useEffect(() => {
-    async function loadData() {
+    let isMounted = true;
+    async function loadForecast() {
       setLoading(true);
       setError(null);
       try {
         const data = await fetchForecast(currentCity, coordinates?.lat, coordinates?.lon, 5);
-        setWeatherData(data);
-
-        // Compute base risk analysis tailored to user persona
-        if (data.current) {
-          const personaToActivity = {
-            farmer: 'farming',
-            fisherman: 'marine_activity',
-            traveler: 'travelling',
-            construction: 'construction',
-            aviation: 'aviation_briefing',
-            events: 'outdoor_event',
-            general: 'general_outdoor',
-          };
-          const targetActivity = personaToActivity[currentPersona] || 'general_outdoor';
-
-          const riskRes = await analyzeRisk({
-            activity: targetActivity,
-            temperature: data.current.temperature,
-            feels_like: data.current.feels_like,
-            humidity: data.current.humidity,
-            wind_speed: data.current.wind_speed,
-            condition: data.current.condition,
-            pop: 0.0,
-            visibility: data.current.visibility,
-            target_time: 'Current',
-            language: currentLang
-          });
-          setRiskData(riskRes);
+        if (isMounted) {
+          setWeatherData(data);
         }
       } catch (err) {
         console.error('Failed to load weather data:', err);
-        setError('Unable to load meteorological telemetry. Please verify backend service.');
+        if (isMounted) {
+          setError('Unable to load meteorological telemetry. Please verify backend service.');
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     }
 
-    loadData();
-  }, [currentCity, coordinates?.lat, coordinates?.lon, currentPersona, currentLang]);
+    loadForecast();
+    return () => { isMounted = false; };
+  }, [currentCity, coordinates?.lat, coordinates?.lon]);
+
+  // Compute base risk analysis tailored to user persona & language without re-fetching forecast
+  useEffect(() => {
+    let isMounted = true;
+    async function computeRisk() {
+      if (!weatherData?.current) return;
+
+      const personaToActivity = {
+        farmer: 'farming',
+        fisherman: 'marine_activity',
+        traveler: 'travelling',
+        construction: 'construction',
+        aviation: 'aviation_briefing',
+        events: 'outdoor_event',
+        general: 'general_outdoor',
+      };
+      const targetActivity = personaToActivity[currentPersona] || 'general_outdoor';
+
+      try {
+        const riskRes = await analyzeRisk({
+          activity: targetActivity,
+          temperature: weatherData.current.temperature,
+          feels_like: weatherData.current.feels_like,
+          humidity: weatherData.current.humidity,
+          wind_speed: weatherData.current.wind_speed,
+          condition: weatherData.current.condition,
+          pop: 0.0,
+          visibility: weatherData.current.visibility,
+          target_time: 'Current',
+          language: currentLang
+        });
+        if (isMounted) {
+          setRiskData(riskRes);
+        }
+      } catch (err) {
+        console.warn('Risk analysis update failed:', err);
+      }
+    }
+
+    computeRisk();
+    return () => { isMounted = false; };
+  }, [weatherData, currentPersona, currentLang]);
 
   const handleSelectCity = (name, lat, lon) => {
     setCurrentCity(name);

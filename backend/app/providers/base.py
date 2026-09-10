@@ -99,3 +99,19 @@ class NWPProvider(ABC):
         step_hours: int = 3
     ) -> Dict[str, Any]:
         pass
+
+
+class UpstreamRateLimitError(Exception):
+    """Raised when an upstream meteorological provider returns HTTP 429 Too Many Requests."""
+
+    def __init__(
+        self,
+        message: str = "Upstream weather service is temporarily rate-limited (HTTP 429).",
+        retry_after: Optional[int] = None,
+        provider: str = "Open-Meteo",
+    ):
+        super().__init__(message)
+        self.message = message
+        self.retry_after = retry_after
+        self.provider = provider
+

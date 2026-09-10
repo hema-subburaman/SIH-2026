@@ -1,6 +1,57 @@
 const rawApiBase = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 const API_BASE = rawApiBase.endsWith('/') ? rawApiBase.slice(0, -1) : rawApiBase;
 
+// In-memory response cache and in-flight promise map for request coalescing
+const apiCache = new Map();
+const inFlightRequests = new Map();
+
+/**
+ * Executes a GET request with in-flight coalescing and short-term client caching.
+ * Prevents identical concurrent requests from firing multiple network roundtrips.
+ */
+export async function cachedFetch(url, options = {}, ttlMs = 60000) {
+  const isGet = !options.method || options.method.toUpperCase() === 'GET';
+  if (!isGet) {
+    return fetch(url, options);
+  }
+
+  const cacheKey = url;
+  const now = Date.now();
+
+  // Return fresh cached data if within TTL
+  const cached = apiCache.get(cacheKey);
+  if (cached && (now - cached.timestamp < ttlMs)) {
+    return cached.data;
+  }
+
+  // Return in-flight promise if an identical request is already running
+  if (inFlightRequests.has(cacheKey)) {
+    return inFlightRequests.get(cacheKey);
+  }
+
+  const promise = (async () => {
+    try {
+      const res = await fetch(url, options);
+      if (!res.ok) {
+        throw new Error(`API error (${res.status}): ${res.statusText}`);
+      }
+      const data = await res.json();
+      apiCache.set(cacheKey, { data, timestamp: Date.now() });
+      return data;
+    } finally {
+      inFlightRequests.delete(cacheKey);
+    }
+  })();
+
+  inFlightRequests.set(cacheKey, promise);
+  return promise;
+}
+
+export function clearClientApiCache() {
+  apiCache.clear();
+  inFlightRequests.clear();
+}
+
 export async function fetchCurrentWeather(city = 'Chennai', lat = null, lon = null, provider = null) {
   const params = new URLSearchParams();
   if (city) params.append('city', city);
@@ -8,9 +59,7 @@ export async function fetchCurrentWeather(city = 'Chennai', lat = null, lon = nu
   if (lon !== null) params.append('lon', lon);
   if (provider) params.append('provider', provider);
 
-  const res = await fetch(`${API_BASE}/weather/current?${params.toString()}`);
-  if (!res.ok) throw new Error(`Weather API error: ${res.statusText}`);
-  return await res.json();
+  return await cachedFetch(`${API_BASE}/weather/current?${params.toString()}`, {}, 60000);
 }
 
 export async function fetchForecast(city = 'Chennai', lat = null, lon = null, days = 5, provider = null) {
@@ -21,9 +70,7 @@ export async function fetchForecast(city = 'Chennai', lat = null, lon = null, da
   params.append('days', days);
   if (provider) params.append('provider', provider);
 
-  const res = await fetch(`${API_BASE}/weather/forecast?${params.toString()}`);
-  if (!res.ok) throw new Error(`Forecast API error: ${res.statusText}`);
-  return await res.json();
+  return await cachedFetch(`${API_BASE}/weather/forecast?${params.toString()}`, {}, 60000);
 }
 
 export async function fetchDetailedForecast(city = 'Chennai', lat = null, lon = null, days = 7) {
@@ -33,17 +80,16 @@ export async function fetchDetailedForecast(city = 'Chennai', lat = null, lon = 
   if (lon !== null) params.append('lon', lon);
   params.append('days', days);
 
-  const res = await fetch(`${API_BASE}/weather/forecast/detailed?${params.toString()}`);
-  if (!res.ok) throw new Error(`Detailed Forecast API error: ${res.statusText}`);
-  return await res.json();
+  return await cachedFetch(`${API_BASE}/weather/forecast/detailed?${params.toString()}`, {}, 60000);
 }
-
 
 export async function searchLocations(query) {
   if (!query || query.trim().length === 0) return [];
-  const res = await fetch(`${API_BASE}/weather/location?query=${encodeURIComponent(query)}`);
-  if (!res.ok) return [];
-  return await res.json();
+  try {
+    return await cachedFetch(`${API_BASE}/weather/location?query=${encodeURIComponent(query)}`, {}, 120000);
+  } catch (e) {
+    return [];
+  }
 }
 
 export async function queryChat(message, city = 'Chennai', lat = null, lon = null, language = 'en') {
@@ -72,9 +118,7 @@ export async function fetchAlerts(city = 'Chennai', lat = null, lon = null) {
   if (lat !== null) params.append('lat', lat);
   if (lon !== null) params.append('lon', lon);
 
-  const res = await fetch(`${API_BASE}/alerts?${params.toString()}`);
-  if (!res.ok) throw new Error(`Alerts API error: ${res.statusText}`);
-  return await res.json();
+  return await cachedFetch(`${API_BASE}/alerts?${params.toString()}`, {}, 30000);
 }
 
 export async function verifyClaim(claim, city = 'Chennai', lat = null, lon = null, language = 'en') {
@@ -94,15 +138,11 @@ export async function fetchClimateTrends(city = 'Chennai', lat = null, lon = nul
   if (lon !== null) params.append('lon', lon);
   params.append('years', years);
 
-  const res = await fetch(`${API_BASE}/climate/history?${params.toString()}`);
-  if (!res.ok) throw new Error(`Climate trends error: ${res.statusText}`);
-  return await res.json();
+  return await cachedFetch(`${API_BASE}/climate/history?${params.toString()}`, {}, 300000);
 }
 
 export async function fetchProvidersStatus() {
-  const res = await fetch(`${API_BASE}/providers/status`);
-  if (!res.ok) throw new Error(`Providers API error: ${res.statusText}`);
-  return await res.json();
+  return await cachedFetch(`${API_BASE}/providers/status`, {}, 30000);
 }
 
 export async function fetchModelComparison(city = 'Chennai', lat = null, lon = null, days = 5) {
@@ -112,9 +152,7 @@ export async function fetchModelComparison(city = 'Chennai', lat = null, lon = n
   if (lon !== null) params.append('lon', lon);
   params.append('days', days);
 
-  const res = await fetch(`${API_BASE}/weather/forecast/compare?${params.toString()}`);
-  if (!res.ok) throw new Error(`Model comparison API error: ${res.statusText}`);
-  return await res.json();
+  return await cachedFetch(`${API_BASE}/weather/forecast/compare?${params.toString()}`, {}, 60000);
 }
 
 export async function fetchUserPreferences(sessionId = 'default_guest') {
@@ -140,9 +178,7 @@ export async function updateUserPreferences(prefData, sessionId = 'default_guest
 
 export async function fetchPersonalizedAdvisory(persona = 'general', city = 'Chennai') {
   const params = new URLSearchParams({ persona, city });
-  const res = await fetch(`${API_BASE}/preferences/advisory?${params.toString()}`);
-  if (!res.ok) throw new Error('Failed to fetch personalized advisory');
-  return await res.json();
+  return await cachedFetch(`${API_BASE}/preferences/advisory?${params.toString()}`, {}, 60000);
 }
 
 /**
