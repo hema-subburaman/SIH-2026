@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: weathergpt-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./weathergpt.db}
+      - DEBUG=True
+    volumes:
+      - backend_data:/app
+    networks:
+      - weathergpt-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: weathergpt-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    networks:
+      - weathergpt-network
+
+networks:
+  weathergpt-network:
+    driver: bridge
+
+volumes:
+  backend_data:
