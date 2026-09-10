@@ -8,6 +8,7 @@ from app.schemas.weather import (
     CurrentWeather,
     ForecastItem,
 )
+from app.schemas.forecast_common import CommonForecastItem, CommonModelForecastResponse
 from app.core.config import settings
 import logging
 
@@ -193,3 +194,83 @@ class OpenWeatherProvider(WeatherProvider, ForecastProvider):
             source="OpenWeather API",
             attribution_notes="Forecast model data via OpenWeather 5-Day/3-Hour Service",
         )
+
+    async def get_common_forecast(
+        self, lat: float, lon: float, days: int = 5
+    ) -> CommonModelForecastResponse:
+        """Normalizes OpenWeather forecast into CommonModelForecastResponse."""
+        if not self.is_configured:
+            return CommonModelForecastResponse(
+                provider="openweather",
+                model="OpenWeather Global NWP",
+                source="OpenWeather Ltd.",
+                available=False,
+                configured=False,
+                status="Provider not configured (Missing OPENWEATHER_API_KEY)",
+                latitude=lat,
+                longitude=lon,
+                forecast_items=[],
+                attribution_notes="Set OPENWEATHER_API_KEY in environment to enable OpenWeather.",
+            )
+
+        try:
+            norm = await self.get_forecast(lat=lat, lon=lon, days=days)
+            items: List[CommonForecastItem] = []
+            for it in norm.forecast:
+                avail = ["temperature", "humidity", "wind_speed", "condition"]
+                if it.feels_like is not None:
+                    avail.append("feels_like")
+                if it.rain_mm is not None:
+                    avail.append("precipitation")
+                if it.pop is not None:
+                    avail.append("precipitation_probability")
+
+                items.append(
+                    CommonForecastItem(
+                        provider="openweather",
+                        model="OpenWeather Global NWP",
+                        source=norm.source,
+                        run_time="Latest",
+                        forecast_time=it.time,
+                        latitude=lat,
+                        longitude=lon,
+                        temperature=it.temperature,
+                        feels_like=it.feels_like,
+                        humidity=it.humidity,
+                        precipitation=it.rain_mm,
+                        precipitation_probability=it.pop,
+                        wind_speed=it.wind_speed,
+                        wind_direction=it.wind_deg,
+                        condition=it.condition,
+                        available_variables=avail,
+                    )
+                )
+
+            return CommonModelForecastResponse(
+                provider="openweather",
+                model="OpenWeather Global NWP",
+                source="OpenWeather 2.5 API",
+                available=True,
+                configured=True,
+                status="Available / Operational",
+                resolution="~10 km",
+                run_time="Latest 3-Hour Cycle",
+                latitude=lat,
+                longitude=lon,
+                forecast_items=items,
+                attribution_notes="OpenWeather meteorological observation & forecast.",
+            )
+        except Exception as ex:
+            logger.warning(f"OpenWeather common forecast failed: {ex}")
+            return CommonModelForecastResponse(
+                provider="openweather",
+                model="OpenWeather Global NWP",
+                source="OpenWeather 2.5 API",
+                available=False,
+                configured=True,
+                status=f"OpenWeather unavailable ({str(ex)})",
+                latitude=lat,
+                longitude=lon,
+                forecast_items=[],
+                attribution_notes="Upstream OpenWeather request error.",
+            )

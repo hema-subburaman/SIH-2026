@@ -29,10 +29,15 @@ class AlertService:
         self._polling_task: Optional[asyncio.Task] = None
         self._is_polling = False
 
-    async def connect_ws(self, websocket: WebSocket):
-        await websocket.accept()
+    async def register_ws(self, websocket: WebSocket):
+        """Registers an already-accepted WebSocket connection."""
         self.active_connections.add(websocket)
-        logger.info(f"WebSocket client connected. Total active: {len(self.active_connections)}")
+        logger.info(f"WebSocket client registered. Total active: {len(self.active_connections)}")
+
+    async def connect_ws(self, websocket: WebSocket):
+        """Accepts and registers a new WebSocket connection."""
+        await websocket.accept()
+        await self.register_ws(websocket)
 
     def disconnect_ws(self, websocket: WebSocket):
         self.active_connections.discard(websocket)
@@ -97,6 +102,13 @@ class AlertService:
         """Background worker running periodic alert polling at configurable intervals."""
         self._is_polling = True
         interval = max(30, settings.ALERT_POLL_INTERVAL_SECONDS)
+        # Yield to event loop immediately on startup before initial poll
+        # to ensure server finishes ASGI startup and is ready for client connections
+        try:
+            await asyncio.sleep(2)
+        except asyncio.CancelledError:
+            return
+
         logger.info(f"Background official alert polling worker started with interval: {interval}s")
 
         while self._is_polling:

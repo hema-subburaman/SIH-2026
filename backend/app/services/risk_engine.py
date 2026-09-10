@@ -42,8 +42,15 @@ class WeatherImpactIntelligenceEngine:
         feels_like: Optional[float] = None,
         visibility: Optional[float] = 10000.0,
         target_time: str = "Current",
-        language: str = "en"
+        language: str = "en",
+        custom_scenario: Optional[str] = None
     ) -> RiskAnalysisResponse:
+        # Normalize pop to 0.0-1.0 if passed as percentage (e.g. 50 -> 0.50)
+        if pop is not None and pop > 1.0:
+            pop = pop / 100.0
+        elif pop is None:
+            pop = 0.0
+
         factors: List[RiskFactor] = []
         score: float = 0.0  # 0 to 100 composite risk score
         
@@ -188,13 +195,25 @@ class WeatherImpactIntelligenceEngine:
                     )
                 )
 
+        # Contextualize explanation and recommendation if a custom scenario was specified
+        clean_scenario = custom_scenario.strip() if custom_scenario else None
+        if clean_scenario:
+            explanation = f'Scenario Context ("{clean_scenario}"): {explanation}'
+            if final_risk == RiskLevel.HIGH:
+                recommendation = f"For this scenario, outdoor activity is NOT recommended under these atmospheric conditions. {recommendation}"
+            elif final_risk == RiskLevel.MEDIUM:
+                recommendation = f"For this scenario, proceed with heightened caution. {recommendation}"
+            else:
+                recommendation = f"For this scenario, atmospheric conditions are favorable. {recommendation}"
+
         return RiskAnalysisResponse(
             activity=activity.value,
             risk_level=final_risk,
             score=min(100.0, round(score, 1)),
             factors=factors,
             explanation=explanation,
-            recommendation=recommendation
+            recommendation=recommendation,
+            custom_scenario=clean_scenario
         )
 
     def _generate_activity_advisory(

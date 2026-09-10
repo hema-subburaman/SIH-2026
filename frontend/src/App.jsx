@@ -10,7 +10,7 @@ import VerifyClaimPage from './pages/VerifyClaimPage';
 import ClimatePage from './pages/ClimatePage';
 import ProvidersPage from './pages/ProvidersPage';
 import { PRESET_CITIES, UI_TRANSLATIONS } from './utils/constants';
-import { fetchForecast, analyzeRisk } from './services/api';
+import { fetchForecast, analyzeRisk, getAlertsWebSocketUrl } from './services/api';
 import { 
   MessageSquare, 
   Calendar, 
@@ -18,20 +18,31 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   TrendingUp, 
-  Cpu 
+  Cpu,
+  MoreHorizontal,
+  X
 } from 'lucide-react';
 
 export default function App() {
   const [currentCity, setCurrentCity] = useState('Chennai');
   const [coordinates, setCoordinates] = useState({ lat: 13.0827, lon: 80.2707 });
   const [currentLang, setCurrentLang] = useState('en');
+  const [currentPersona, setCurrentPersona] = useState(() => {
+    return localStorage.getItem('weathergpt_persona') || 'general';
+  });
   const [activeTab, setActiveTab] = useState('chat');
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
 
   const [weatherData, setWeatherData] = useState(null);
   const [riskData, setRiskData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [incomingAlert, setIncomingAlert] = useState(null);
+
+  const handleSelectPersona = (newPersona) => {
+    setCurrentPersona(newPersona);
+    localStorage.setItem('weathergpt_persona', newPersona);
+  };
 
   const t = UI_TRANSLATIONS[currentLang] || UI_TRANSLATIONS.en;
 
@@ -40,11 +51,11 @@ export default function App() {
     let ws = null;
     let reconnectTimeout = null;
     let pingInterval = null;
+    let isMounted = true;
 
     function connect() {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const host = window.location.host;
-      const wsUrl = `${protocol}//${host}/ws/alerts`;
+      if (!isMounted) return;
+      const wsUrl = getAlertsWebSocketUrl();
 
       try {
         ws = new WebSocket(wsUrl);
@@ -68,22 +79,35 @@ export default function App() {
         };
         ws.onclose = () => {
           clearInterval(pingInterval);
-          reconnectTimeout = setTimeout(connect, 5000);
+          if (isMounted) {
+            reconnectTimeout = setTimeout(connect, 5000);
+          }
         };
         ws.onerror = () => {
           if (ws) ws.close();
         };
       } catch (e) {
-        reconnectTimeout = setTimeout(connect, 5000);
+        if (isMounted) {
+          reconnectTimeout = setTimeout(connect, 5000);
+        }
       }
     }
 
     connect();
 
     return () => {
+      isMounted = false;
       clearInterval(pingInterval);
       clearTimeout(reconnectTimeout);
-      if (ws) ws.close();
+      if (ws) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close();
+        } else if (ws.readyState === WebSocket.CONNECTING) {
+          ws.onopen = () => {
+            try { ws.close(); } catch (e) {}
+          };
+        }
+      }
     };
   }, []);
 
@@ -96,10 +120,21 @@ export default function App() {
         const data = await fetchForecast(currentCity, coordinates?.lat, coordinates?.lon, 5);
         setWeatherData(data);
 
-        // Compute base risk analysis for general outdoor activity
+        // Compute base risk analysis tailored to user persona
         if (data.current) {
+          const personaToActivity = {
+            farmer: 'farming',
+            fisherman: 'marine_activity',
+            traveler: 'travelling',
+            construction: 'construction',
+            aviation: 'aviation_briefing',
+            events: 'outdoor_event',
+            general: 'general_outdoor',
+          };
+          const targetActivity = personaToActivity[currentPersona] || 'general_outdoor';
+
           const riskRes = await analyzeRisk({
-            activity: 'general_outdoor',
+            activity: targetActivity,
             temperature: data.current.temperature,
             feels_like: data.current.feels_like,
             humidity: data.current.humidity,
@@ -121,7 +156,7 @@ export default function App() {
     }
 
     loadData();
-  }, [currentCity, coordinates?.lat, coordinates?.lon]);
+  }, [currentCity, coordinates?.lat, coordinates?.lon, currentPersona, currentLang]);
 
   const handleSelectCity = (name, lat, lon) => {
     setCurrentCity(name);
@@ -151,15 +186,36 @@ export default function App() {
     );
   };
 
-  const mobileNavItems = [
-    { id: 'chat', label: 'Chat', icon: <MessageSquare size={18} /> },
-    { id: 'forecast', label: 'Forecast', icon: <Calendar size={18} /> },
-    { id: 'whatif', label: 'What-If', icon: <Sliders size={18} /> },
-    { id: 'alerts', label: 'Alerts', icon: <AlertTriangle size={18} /> },
-    { id: 'verify', label: 'Verify', icon: <CheckCircle2 size={18} /> },
-    { id: 'climate', label: 'Climate', icon: <TrendingUp size={18} /> },
-    { id: 'providers', label: 'Models', icon: <Cpu size={18} /> },
+  const primaryMobileNavItems = [
+    { id: 'chat', label: t.navChat || 'Chat Assistant', shortLabel: currentLang === 'hi' ? 'चैट' : (currentLang === 'ta' ? 'உரையாடல்' : 'Chat'), icon: <MessageSquare size={18} /> },
+    { id: 'forecast', label: t.navForecast || 'Forecast', shortLabel: currentLang === 'hi' ? 'पूर्वानुमान' : (currentLang === 'ta' ? 'வானிலை' : 'Forecast'), icon: <Calendar size={18} /> },
+    { id: 'whatif', label: t.navWhatIf || 'What-If Impact', shortLabel: 'What-If', icon: <Sliders size={18} /> },
+    { id: 'alerts', label: t.navAlerts || 'Alerts Center', shortLabel: currentLang === 'hi' ? 'अलर्ट' : (currentLang === 'ta' ? 'எச்சரிக்கை' : 'Alerts'), icon: <AlertTriangle size={18} /> },
   ];
+
+  const secondaryModules = [
+    { 
+      id: 'verify', 
+      label: t.navVerify || 'Verify Claim', 
+      desc: 'Verify viral weather posts or rumors against NWP ground truth', 
+      icon: <CheckCircle2 size={18} style={{ color: 'var(--accent-emerald)' }} /> 
+    },
+    { 
+      id: 'climate', 
+      label: t.navClimate || 'Climate Trends', 
+      desc: 'Decadal temperature anomalies & historical patterns', 
+      icon: <TrendingUp size={18} style={{ color: 'var(--accent-cyan)' }} /> 
+    },
+    { 
+      id: 'providers', 
+      label: t.navProviders || 'NWP & Models', 
+      desc: 'ECMWF, GFS, WRF multi-model consensus & telemetry', 
+      icon: <Cpu size={18} style={{ color: 'var(--accent-indigo)' }} /> 
+    },
+  ];
+
+  const secondaryIds = ['verify', 'climate', 'providers'];
+  const isSecondaryActive = secondaryIds.includes(activeTab);
 
   return (
     <div className="app-layout">
@@ -169,6 +225,8 @@ export default function App() {
         onSelectCity={handleSelectCity}
         currentLang={currentLang}
         onChangeLang={setCurrentLang}
+        currentPersona={currentPersona}
+        onChangePersona={handleSelectPersona}
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         onUseGps={handleUseGps}
@@ -176,7 +234,9 @@ export default function App() {
 
       {/* Preset Cities Bar */}
       <div className="presets-bar">
-        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Quick Locations:</span>
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+          {t.quickLocations || 'Quick Locations:'}
+        </span>
         {PRESET_CITIES.map((c) => {
           const isActive = currentCity.toLowerCase().includes(c.name.toLowerCase());
           return (
@@ -198,6 +258,7 @@ export default function App() {
         <AlertNotificationBanner
           incomingAlert={incomingAlert}
           onDismiss={() => setIncomingAlert(null)}
+          currentLang={currentLang}
         />
 
         {/* Real-time Weather Summary Hero Card */}
@@ -223,6 +284,8 @@ export default function App() {
           <ForecastPage
             forecastData={weatherData}
             currentCity={currentCity}
+            coordinates={coordinates}
+            currentLang={currentLang}
           />
         )}
 
@@ -230,6 +293,7 @@ export default function App() {
           <WhatIfPage
             weatherData={weatherData}
             currentCity={currentCity}
+            currentLang={currentLang}
           />
         )}
 
@@ -237,6 +301,7 @@ export default function App() {
           <AlertsPage
             currentCity={currentCity}
             coordinates={coordinates}
+            currentLang={currentLang}
           />
         )}
 
@@ -244,6 +309,7 @@ export default function App() {
           <VerifyClaimPage
             currentCity={currentCity}
             coordinates={coordinates}
+            currentLang={currentLang}
           />
         )}
 
@@ -251,26 +317,97 @@ export default function App() {
           <ClimatePage
             currentCity={currentCity}
             coordinates={coordinates}
+            currentLang={currentLang}
           />
         )}
 
         {activeTab === 'providers' && (
-          <ProvidersPage />
+          <ProvidersPage
+            currentCity={currentCity}
+            currentLang={currentLang}
+          />
         )}
       </main>
 
-      {/* Mobile Bottom Navigation */}
+      {/* Mobile "More" Modules Bottom Sheet Overlay */}
+      {mobileMoreOpen && (
+        <div className="mobile-more-backdrop" onClick={() => setMobileMoreOpen(false)}>
+          <div className="mobile-more-sheet glass-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="mobile-more-sheet-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Sliders size={16} style={{ color: 'var(--accent-cyan)' }} />
+                <span style={{ fontWeight: 700, fontSize: '0.88rem', color: '#fff' }}>
+                  Additional Meteorological Modules
+                </span>
+              </div>
+              <button 
+                type="button" 
+                className="mobile-more-sheet-close"
+                onClick={() => setMobileMoreOpen(false)}
+                aria-label="Close modules menu"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="mobile-more-items-list">
+              {secondaryModules.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  className={`mobile-more-module-btn ${activeTab === m.id ? 'active' : ''}`}
+                  onClick={() => {
+                    setActiveTab(m.id);
+                    setMobileMoreOpen(false);
+                  }}
+                >
+                  <div className="mobile-more-module-icon">{m.icon}</div>
+                  <div className="mobile-more-module-text">
+                    <div className="mobile-more-module-title">{m.label}</div>
+                    <div className="mobile-more-module-desc">{m.desc}</div>
+                  </div>
+                  {activeTab === m.id && (
+                    <span className="mobile-more-active-dot" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Bottom Navigation — Compact 5-Item Bar */}
       <nav className="mobile-bottom-nav">
-        {mobileNavItems.map((item) => (
+        {primaryMobileNavItems.map((item) => (
           <button
             key={item.id}
             className={`mobile-nav-btn ${activeTab === item.id ? 'active' : ''}`}
-            onClick={() => setActiveTab(item.id)}
+            onClick={() => {
+              setActiveTab(item.id);
+              setMobileMoreOpen(false);
+            }}
           >
             {item.icon}
-            <span>{item.label}</span>
+            <span>{item.shortLabel || item.label}</span>
           </button>
         ))}
+
+        {/* 5th Navigation Button: More */}
+        <button
+          key="more-nav-btn"
+          type="button"
+          className={`mobile-nav-btn ${isSecondaryActive || mobileMoreOpen ? 'active' : ''}`}
+          onClick={() => setMobileMoreOpen(!mobileMoreOpen)}
+          aria-expanded={mobileMoreOpen}
+          aria-label="More navigation modules"
+        >
+          <MoreHorizontal size={18} />
+          <span>
+            {isSecondaryActive
+              ? (secondaryModules.find(m => m.id === activeTab)?.label.split(' ')[0] || 'More')
+              : (t.more || 'More')}
+          </span>
+        </button>
       </nav>
     </div>
   );

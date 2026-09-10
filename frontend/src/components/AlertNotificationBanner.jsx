@@ -64,7 +64,8 @@ export default function AlertNotificationBanner({ incomingAlert, onDismiss }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        gap: '1rem',
+        flexWrap: 'wrap',
+        gap: '0.75rem',
         animation: 'fadeIn 0.3s ease-in-out',
       }}
     >

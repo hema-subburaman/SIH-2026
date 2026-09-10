@@ -4,6 +4,16 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'ta', label: 'Tamil', native: 'தமிழ்' },
 ];
 
+export const SUPPORTED_PERSONAS = [
+  { id: 'general', label: 'General Public', icon: '🌤️', desc: 'Daily weather, air comfort, and routine commute' },
+  { id: 'farmer', label: 'Farmer / Agriculture', icon: '🌾', desc: 'Crop spraying, rainfall timing, and irrigation' },
+  { id: 'fisherman', label: 'Fisherman / Marine', icon: '⚓', desc: 'Sea state, wind gusts, and coastal storm safety' },
+  { id: 'traveler', label: 'Traveler / Logistics', icon: '🚗', desc: 'Highway driving, fog visibility, and travel buffer' },
+  { id: 'construction', label: 'Construction', icon: '🏗️', desc: 'Scaffolding, crane safety, and worker heat stress' },
+  { id: 'aviation', label: 'Aviation Briefing', icon: '✈️', desc: 'VFR/IFR visibility, crosswinds, and convective CAPE' },
+  { id: 'events', label: 'Outdoor Events', icon: '🎪', desc: 'Outdoor suitability score and rain contingency' },
+];
+
 export const PRESET_CITIES = [
   { name: 'Chennai', state: 'Tamil Nadu', lat: 13.0827, lon: 80.2707 },
   { name: 'Delhi', state: 'Delhi', lat: 28.6139, lon: 77.2090 },
@@ -27,89 +37,33 @@ export const ACTIVITIES = [
   { id: 'aviation_briefing', label: 'Aviation Briefing', icon: 'Plane' },
 ];
 
-export const UI_TRANSLATIONS = {
-  en: {
-    navChat: 'Chat Assistant',
-    navForecast: 'Forecast',
-    navWhatIf: 'What-If Impact',
-    navAlerts: 'Alerts Center',
-    navVerify: 'Verify Claim',
-    navClimate: 'Climate Trends',
-    navProviders: 'NWP & Providers',
-    currentWeather: 'Current Weather',
-    feelsLike: 'Feels like',
-    humidity: 'Humidity',
-    wind: 'Wind',
-    pressure: 'Pressure',
-    visibility: 'Visibility',
-    sunrise: 'Sunrise',
-    sunset: 'Sunset',
-    searchCity: 'Search city (e.g. Chennai, Delhi, Mumbai)...',
-    useGps: 'Use Current Location',
-    askPlaceholder: 'Ask WeatherGPT (e.g. "Can I go running tomorrow evening?")...',
-    voiceSpeak: 'Speak',
-    voiceListening: 'Listening...',
-    verified: 'VERIFIED',
-    contradicted: 'CONTRADICTED',
-    unverified: 'UNVERIFIED',
-    officialWarning: 'OFFICIAL GOVERNMENT WARNING',
-    systemRisk: 'SYSTEM WEATHER RISK (ALGORITHMIC)',
-    disclaimer: 'Prototype thresholds are for advisory planning and are not official medical or meteorological standards.',
-  },
-  hi: {
-    navChat: 'चैट सहायक',
-    navForecast: 'पूर्वानुमान',
-    navWhatIf: 'क्या-अगर प्रभाव',
-    navAlerts: 'चेतावनी केंद्र',
-    navVerify: 'दावा सत्यापन',
-    navClimate: 'जलवायु रुझान',
-    navProviders: 'प्रदाता और मॉडल',
-    currentWeather: 'वर्तमान मौसम',
-    feelsLike: 'महसूस होता है',
-    humidity: 'आर्द्रता',
-    wind: 'हवा',
-    pressure: 'दबाव',
-    visibility: 'दृश्यता',
-    sunrise: 'सूर्योदय',
-    sunset: 'सूर्यास्त',
-    searchCity: 'शहर खोजें (जैसे चेन्नई, दिल्ली, मुंबई)...',
-    useGps: 'वर्तमान स्थान उपयोग करें',
-    askPlaceholder: 'WeatherGPT से पूछें (उदा. "क्या कल बारिश होगी?")...',
-    voiceSpeak: 'बोलें',
-    voiceListening: 'सुन रहा है...',
-    verified: 'सत्यापित (VERIFIED)',
-    contradicted: 'गलत साबित (CONTRADICTED)',
-    unverified: 'असत्यापित (UNVERIFIED)',
-    officialWarning: 'आधिकारिक सरकारी चेतावनी (IMD)',
-    systemRisk: 'सिस्टम मौसम जोखिम (नियम-आधारित)',
-    disclaimer: 'प्रोटोटाइप जोखिम स्तर सलाहकारी हैं और आधिकारिक चिकित्सा या सरकारी मानक नहीं हैं।',
-  },
-  ta: {
-    navChat: 'உரையாடல் உதவியாளர்',
-    navForecast: 'வானிலை முன்னறிவிப்பு',
-    navWhatIf: 'சூழ்நிலை பகுப்பாய்வு',
-    navAlerts: 'எச்சரிக்கை மையம்',
-    navVerify: 'செய்தி உண்மை சரிபார்ப்பு',
-    navClimate: 'காலநிலை போக்குகள்',
-    navProviders: 'வானிலை சேவைகள்',
-    currentWeather: 'தற்போதைய வானிலை',
-    feelsLike: 'உணரும் வெப்பநிலை',
-    humidity: 'ஈரப்பதம்',
-    wind: 'காற்று வேகம்',
-    pressure: 'காற்று அழுத்தம்',
-    visibility: 'பார்வைத்திறன்',
-    sunrise: 'சூரிய உதயம்',
-    sunset: 'சூரிய அஸ்தமனம்',
-    searchCity: 'நகரத்தைத் தேடுங்கள் (எ.கா. சென்னை, மதுரை)...',
-    useGps: 'தற்போதைய இருப்பிடம்',
-    askPlaceholder: 'வானிலை கேள்விகள் கேட்கவும் (எ.கா. "நாளைக்கு மழை வருமா?")...',
-    voiceSpeak: 'பேசுங்கள்',
-    voiceListening: 'கேட்கிறது...',
-    verified: 'சரிபார்க்கப்பட்டது (VERIFIED)',
-    contradicted: 'முரணானது (CONTRADICTED)',
-    unverified: 'உறுதிப்படுத்தப்படவில்லை (UNVERIFIED)',
-    officialWarning: 'அதிகாரப்பூர்வ அரசு எச்சரிக்கை (IMD)',
-    systemRisk: 'கணினி வானிலை ஆபத்து எச்சரிக்கை',
-    disclaimer: 'இடர் பகுப்பாய்வு ஆலோசனை நோக்கங்களுக்கானது, இது உத்தியோகபூர்வ மருத்துவ அல்லது அரசு வழிகாட்டுதல் அல்ல.',
-  }
-};
+import { UI_TRANSLATIONS } from './translations';
+
+export { UI_TRANSLATIONS };
+
+export function getLocalizedPersona(personaId, lang = 'en') {
+  const t = UI_TRANSLATIONS[lang] || UI_TRANSLATIONS.en;
+  const p = SUPPORTED_PERSONAS.find((x) => x.id === personaId);
+  return {
+    id: personaId,
+    icon: p?.icon || '🌤️',
+    label: t[`persona_${personaId}`] || p?.label || personaId,
+    desc: t[`persona_${personaId}_desc`] || p?.desc || '',
+  };
+}
+
+export function getLocalizedActivity(activityId, lang = 'en') {
+  const t = UI_TRANSLATIONS[lang] || UI_TRANSLATIONS.en;
+  const a = ACTIVITIES.find((x) => x.id === activityId);
+  return {
+    id: activityId,
+    icon: a?.icon || 'Sun',
+    label: t[`act_${activityId}`] || a?.label || activityId,
+  };
+}
+
+export function getLocalizedTimeframe(timeId, lang = 'en') {
+  const t = UI_TRANSLATIONS[lang] || UI_TRANSLATIONS.en;
+  return t[`time_${timeId}`] || timeId;
+}
+

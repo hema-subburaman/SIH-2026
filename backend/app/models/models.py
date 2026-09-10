@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, ForeignKey, JSON, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database.session import Base
@@ -16,15 +16,26 @@ class User(Base):
 
 
 class UserPreference(Base):
+    """
+    Lightweight, non-invasive user personalization model.
+    Supports session-based anonymous usage as well as authenticated users.
+    """
     __tablename__ = "user_preferences"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    default_city = Column(String(100), default="Chennai")
+    session_id = Column(String(100), index=True, nullable=True)
+    
+    # 7 Supported Personas: farmer, fisherman, traveler, construction, aviation, events, general
+    persona = Column(String(50), default="general", index=True)
+    default_city = Column(String(100), default="Chennai", index=True)
     language = Column(String(10), default="en")  # en, hi, ta
     units = Column(String(10), default="metric")
+    preferred_activities = Column(JSON, default=list)
+    alert_notifications_enabled = Column(Boolean, default=True)
     high_contrast = Column(Boolean, default=False)
     voice_enabled = Column(Boolean, default=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User", back_populates="preferences")
 
@@ -36,11 +47,15 @@ class Location(Base):
     name = Column(String(150), index=True, nullable=False)
     state = Column(String(100), nullable=True)
     country = Column(String(100), default="IN")
-    latitude = Column(Float, nullable=False)
-    longitude = Column(Float, nullable=False)
+    latitude = Column(Float, nullable=False, index=True)
+    longitude = Column(Float, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     observations = relationship("WeatherObservation", back_populates="location")
+
+    __table_args__ = (
+        Index("idx_location_lat_lon", "latitude", "longitude"),
+    )
 
 
 class WeatherObservation(Base):
@@ -59,9 +74,13 @@ class WeatherObservation(Base):
     condition = Column(String(100), nullable=False)
     icon = Column(String(50), nullable=True)
     source = Column(String(100), nullable=False)
-    observed_at = Column(DateTime, default=datetime.utcnow)
+    observed_at = Column(DateTime, default=datetime.utcnow, index=True)
 
     location = relationship("Location", back_populates="observations")
+
+    __table_args__ = (
+        Index("idx_obs_location_observed", "location_name", "observed_at"),
+    )
 
 
 class Forecast(Base):
@@ -80,6 +99,10 @@ class Forecast(Base):
     source = Column(String(100), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    __table_args__ = (
+        Index("idx_fc_location_time", "location_name", "forecast_time"),
+    )
+
 
 class Alert(Base):
     __tablename__ = "alerts"
@@ -96,9 +119,42 @@ class Alert(Base):
     longitude = Column(Float, nullable=True)
     onset = Column(DateTime, nullable=True)
     expires = Column(DateTime, nullable=True)
-    is_official = Column(Boolean, default=True)  # True = official government warning
+    is_official = Column(Boolean, default=True, index=True)  # True = official government warning
     source = Column(String(150), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("idx_alert_loc_official", "location_name", "is_official"),
+    )
+
+
+class ModelRunRecord(Base):
+    """Tracks historical model cycles, runs, and metadata for GFS and WRF."""
+    __tablename__ = "model_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String(50), index=True, nullable=False)  # gfs, wrf, open_meteo
+    model_name = Column(String(100), nullable=False)
+    cycle = Column(String(50), nullable=True)  # 00Z, 06Z, 12Z, 18Z
+    resolution = Column(String(50), nullable=True)
+    status = Column(String(50), nullable=False)
+    file_reference = Column(String(255), nullable=True)  # path/URI reference; NOT the raw binary
+    metadata_json = Column(JSON, nullable=True)
+    ingested_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class IngestionStatusRecord(Base):
+    """Tracks execution status, timings, and error metrics for ingestion pipeline jobs."""
+    __tablename__ = "ingestion_status"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_name = Column(String(100), index=True, nullable=False)
+    provider = Column(String(50), index=True, nullable=False)
+    status = Column(String(50), nullable=False)  # SUCCESS, FAILED
+    records_ingested = Column(Integer, default=0)
+    execution_time_ms = Column(Float, default=0.0)
+    error_message = Column(Text, nullable=True)
+    executed_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class HistoricalWeather(Base):
@@ -131,7 +187,7 @@ class WeatherQueryAudit(Base):
     provider = Column(String(100), nullable=True)
     source = Column(String(150), nullable=True)
     is_llm_enhanced = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class AlertBroadcastAudit(Base):
@@ -147,7 +203,7 @@ class AlertBroadcastAudit(Base):
     source = Column(String(150), nullable=False)
     provider = Column(String(100), nullable=True)
     client_count = Column(Integer, default=0)
-    broadcast_at = Column(DateTime, default=datetime.utcnow)
+    broadcast_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class ClaimVerificationAudit(Base):
@@ -161,4 +217,4 @@ class ClaimVerificationAudit(Base):
     confidence = Column(Float, nullable=False)
     official_warning_checked = Column(Boolean, default=False)
     source_attribution = Column(String(150), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

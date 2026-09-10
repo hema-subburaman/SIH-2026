@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Query, HTTPException
 from typing import Optional, List, Dict, Any
 from app.schemas.weather import NormalizedWeatherResponse, DetailedForecastResponse
+from app.schemas.forecast_common import ModelComparisonResponse
 from app.services.weather_service import weather_service
 from app.services.forecast_service import forecast_service
+from app.services.model_comparison_service import model_comparison_service
 import logging
 
 router = APIRouter()
@@ -57,6 +59,26 @@ async def get_detailed_forecast(
         logger.error(f"Error in /forecast/detailed: {e}")
         raise HTTPException(status_code=500, detail=f"Detailed forecast retrieval error: {str(e)}")
 
+
+@router.get("/forecast/compare", response_model=ModelComparisonResponse)
+async def compare_forecast_models(
+    city: Optional[str] = Query(default="Chennai", description="Target city name"),
+    lat: Optional[float] = Query(default=None, description="Latitude"),
+    lon: Optional[float] = Query(default=None, description="Longitude"),
+    days: int = Query(default=5, ge=1, le=7, description="Forecast days to compare")
+):
+    """
+    Compare multi-model forecasts (Open-Meteo, NOAA GFS, WRF Meso-scale, OpenWeather).
+    Provides deterministic model agreement score, variable-level divergences, and explainable consensus.
+    """
+    try:
+        resolved_lat, resolved_lon, resolved_name, _, _ = await weather_service.open_meteo.resolve_coordinates(city, lat, lon)
+        return await model_comparison_service.compare_forecasts(
+            lat=resolved_lat, lon=resolved_lon, location_name=resolved_name, days=days
+        )
+    except Exception as e:
+        logger.error(f"Error in /forecast/compare: {e}")
+        raise HTTPException(status_code=500, detail=f"Model comparison error: {str(e)}")
 
 
 @router.get("/location", response_model=List[Dict[str, Any]])

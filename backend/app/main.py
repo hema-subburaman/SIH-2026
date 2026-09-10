@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 from app.core.config import settings
 from app.api.v1.api import api_router
-from app.database.session import engine, Base
+from app.database.session import engine, Base, init_and_migrate_db
 from app.services.alert_service import alert_service
 # Import models to ensure tables are registered with Base.metadata
 import app.models.models
@@ -14,10 +14,10 @@ import app.models.models
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("weathergpt")
 
-# Create database tables automatically
+# Create and auto-migrate database tables automatically
 try:
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database initialized successfully.")
+    init_and_migrate_db()
+    logger.info("Database initialized and migrated successfully.")
 except Exception as e:
     logger.warning(f"Database initialization notice: {e}")
 
@@ -67,20 +67,32 @@ async def health_check():
     }
 
 
+import json
+
+
 @app.websocket("/ws/alerts")
 async def websocket_alerts_endpoint(websocket: WebSocket):
     """WebSocket endpoint broadcasting real-time extreme weather alerts to connected clients."""
-    await alert_service.connect_ws(websocket)
+    await websocket.accept()
+    await alert_service.register_ws(websocket)
     try:
         while True:
             # Keep-alive ping/pong
             data = await websocket.receive_text()
             if data == "ping":
                 await websocket.send_text("pong")
+            else:
+                try:
+                    payload = json.loads(data)
+                    if isinstance(payload, dict) and payload.get("type") == "ping":
+                        await websocket.send_text("pong")
+                except Exception:
+                    pass
     except WebSocketDisconnect:
-        alert_service.disconnect_ws(websocket)
+        logger.info("WebSocket client disconnected cleanly via WebSocketDisconnect.")
     except Exception as e:
-        logger.info(f"WebSocket client closed: {e}")
+        logger.info(f"WebSocket client connection closed: {e}")
+    finally:
         alert_service.disconnect_ws(websocket)
 
 

@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     MONITORED_ALERT_CITIES: List[str] = [
         "Chennai", "Bengaluru", "Mumbai", "Delhi", "Kolkata", "Hyderabad"
     ]
+
+    # NWP Models Configuration (GFS & WRF)
+    GFS_NWP_ENDPOINT: str = Field(default="", validation_alias="GFS_NWP_ENDPOINT")
+    GFS_NOMADS_ENABLED: bool = Field(default=True, validation_alias="GFS_NOMADS_ENABLED")
+    GFS_FILE_PATH: str = Field(default="", validation_alias="GFS_FILE_PATH")
+    WRF_MODEL_ENDPOINT: str = Field(default="", validation_alias="WRF_MODEL_ENDPOINT")
+    WRF_NETCDF_PATH: str = Field(default="", validation_alias="WRF_NETCDF_PATH")
+    INGESTION_ENABLED: bool = Field(default=True, validation_alias="INGESTION_ENABLED")
     
     # Model Config
     model_config = SettingsConfigDict(

@@ -54,37 +54,31 @@ class WeatherService:
         return await self.open_meteo.get_forecast(city=city, lat=lat, lon=lon, days=days)
 
     async def search_locations(self, query: str) -> List[Dict[str, Any]]:
-        """Fast location autocomplete / resolver for Indian cities and global coordinates."""
-        q = query.strip().lower()
-        results: List[Dict[str, Any]] = []
+        """Search real locations worldwide (cities, towns, localities, villages, districts, states, countries)."""
+        if not query or len(query.strip()) < 2:
+            return []
+        q = query.strip()
 
-        # Check local Indian directory first
+        # 1. Query live global geocoding API for real-time worldwide disambiguation
+        api_results = await self.open_meteo.search_locations_api(q, count=8)
+        if api_results:
+            return api_results
+
+        # 2. Fallback to local Indian city directory if offline or query matches
+        fallback: List[Dict[str, Any]] = []
+        q_lower = q.lower()
         for key, val in INDIAN_CITIES_COORDS.items():
-            if q in key or key in q:
-                results.append({
+            if q_lower in key or key in q_lower:
+                fallback.append({
                     "name": val[2],
                     "state": val[3],
+                    "district": "",
                     "country": "IN",
+                    "country_name": "India",
                     "latitude": val[0],
-                    "longitude": val[1]
+                    "longitude": val[1],
                 })
-
-        # Also resolve via Geocoding API if query is outside dictionary
-        if len(results) < 3 and len(q) >= 2:
-            try:
-                lat, lon, name, state, country = await self.open_meteo.resolve_coordinates(city=query, lat=None, lon=None)
-                if not any(r["name"].lower() == name.lower() for r in results):
-                    results.append({
-                        "name": name,
-                        "state": state,
-                        "country": country,
-                        "latitude": lat,
-                        "longitude": lon
-                    })
-            except Exception:
-                pass
-
-        return results
+        return fallback
 
 
 weather_service = WeatherService()

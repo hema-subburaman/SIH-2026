@@ -8,14 +8,14 @@ import { queryChat } from '../services/api';
 import { voiceService } from '../services/voiceService';
 import { UI_TRANSLATIONS } from '../utils/constants';
 
-export default function ChatPage({ currentCity, currentLang, coordinates }) {
+export default function ChatPage({ currentCity, currentLang = 'en', coordinates }) {
   const t = UI_TRANSLATIONS[currentLang] || UI_TRANSLATIONS.en;
   const [messages, setMessages] = useState([
     {
       id: 1,
       sender: 'assistant',
-      text: `Hello! I am WeatherGPT, your Conversational Meteorological Decision-Support Assistant for ${currentCity}. You can ask me about forecasts, rain probability, outdoor sports, travel safety, or agricultural advisories in English, हिन्दी, or தமிழ்.`,
-      source: 'WeatherGPT Intelligence Gateway',
+      text: (t.chatWelcome || 'Hello! I am WeatherGPT, your Conversational Meteorological Decision-Support Assistant for {city}.').replace('{city}', currentCity),
+      source: t.sourceGateway || 'WeatherGPT Intelligence Gateway',
       factors: [],
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
@@ -24,8 +24,26 @@ export default function ChatPage({ currentCity, currentLang, coordinates }) {
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
+  useEffect(() => {
+    setMessages((prev) => {
+      if (prev.length === 1 && prev[0].id === 1) {
+        return [{
+          id: 1,
+          sender: 'assistant',
+          text: (t.chatWelcome || 'Hello! I am WeatherGPT, your Conversational Meteorological Decision-Support Assistant for {city}.').replace('{city}', currentCity),
+          source: t.sourceGateway || 'WeatherGPT Intelligence Gateway',
+          factors: [],
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }];
+      }
+      return prev;
+    });
+  }, [currentLang, currentCity]);
+
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current && messagesEndRef.current.parentElement) {
+      messagesEndRef.current.parentElement.scrollTop = messagesEndRef.current.parentElement.scrollHeight;
+    }
   };
 
   useEffect(() => {
@@ -43,7 +61,7 @@ export default function ChatPage({ currentCity, currentLang, coordinates }) {
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
-    setMessages(prev => [...prev, userMsg]);
+    setMessages((prev) => [...prev, userMsg]);
     setInputMessage('');
     setLoading(true);
 
@@ -68,17 +86,14 @@ export default function ChatPage({ currentCity, currentLang, coordinates }) {
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
 
-      setMessages(prev => [...prev, assistantMsg]);
-
-      // Automatically speak answer if voice synthesis is active
-      // voiceService.speak(response.answer, currentLang);
+      setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
-      setMessages(prev => [
+      setMessages((prev) => [
         ...prev,
         {
           id: Date.now() + 1,
           sender: 'assistant',
-          text: `I encountered an issue processing your meteorological query: ${err.message}. Please check network connection or backend services.`,
+          text: `Error processing meteorological query: ${err.message}. Please check connection.`,
           source: 'System Error Handler',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
@@ -98,14 +113,12 @@ export default function ChatPage({ currentCity, currentLang, coordinates }) {
   };
 
   const quickPrompts = [
-    "Will it rain tomorrow?",
-    "How is the weather this weekend?",
-    "Will tomorrow be suitable for an outdoor event?",
-    "Can I go running tomorrow morning?",
-    "Will the temperature be high tomorrow?",
-    "Should I carry an umbrella?",
-    "Naalaikku mazha varuma?",
-    "Kya kal barish hogi?"
+    t.prompt_rain || 'Will it rain tomorrow?',
+    t.prompt_weekend || 'How is the weather this weekend?',
+    t.prompt_event || 'Will tomorrow be suitable for an outdoor event?',
+    t.prompt_running || 'Can I go running tomorrow morning?',
+    t.prompt_temp || 'Will the temperature be high tomorrow?',
+    t.prompt_umbrella || 'Should I carry an umbrella?',
   ];
 
   return (
@@ -124,7 +137,7 @@ export default function ChatPage({ currentCity, currentLang, coordinates }) {
                 ) : (
                   <>
                     <User size={15} />
-                    <span>You</span>
+                    <span>{t.you || 'You'}</span>
                   </>
                 )}
               </div>
@@ -142,7 +155,8 @@ export default function ChatPage({ currentCity, currentLang, coordinates }) {
                       cursor: 'pointer',
                       padding: '2px'
                     }}
-                    title="Read aloud (Text-to-Speech)"
+                    title={t.readAloud || 'Read aloud (Text-to-Speech)'}
+                    aria-label={t.readAloud || 'Read aloud'}
                   >
                     <Volume2 size={15} />
                   </button>
@@ -152,7 +166,7 @@ export default function ChatPage({ currentCity, currentLang, coordinates }) {
             </div>
 
             {/* Content text */}
-            <div style={{ fontSize: '0.9rem', lineHeight: '1.5' }}>{m.text}</div>
+            <div style={{ fontSize: '0.9rem', lineHeight: '1.5', wordBreak: 'break-word' }}>{m.text}</div>
 
             {/* Explainable Factors if present */}
             {m.factors && m.factors.length > 0 && (
@@ -172,7 +186,7 @@ export default function ChatPage({ currentCity, currentLang, coordinates }) {
         {loading && (
           <div className="chat-bubble assistant" style={{ color: 'var(--text-muted)' }}>
             <Sparkles size={16} className="brand-icon" style={{ display: 'inline', marginRight: '6px' }} />
-            Analyzing meteorological parameters and synthesizing decision support...
+            {t.analyzingChat || 'Analyzing meteorological parameters and synthesizing decision support...'}
           </div>
         )}
 
@@ -209,7 +223,7 @@ export default function ChatPage({ currentCity, currentLang, coordinates }) {
         <input
           type="text"
           className="chat-input"
-          placeholder={t.askPlaceholder}
+          placeholder={t.askPlaceholder || 'Ask WeatherGPT...'}
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
         />
@@ -220,7 +234,7 @@ export default function ChatPage({ currentCity, currentLang, coordinates }) {
           disabled={loading || !inputMessage.trim()}
         >
           <Send size={16} />
-          <span>Send</span>
+          <span>{t.send || 'Send'}</span>
         </button>
       </form>
     </div>

@@ -9,6 +9,7 @@ from app.schemas.weather import (
     ForecastItem,
 )
 from app.schemas.climate import ClimateTrendResponse, ClimateDataPoint
+from app.schemas.forecast_common import CommonForecastItem, CommonModelForecastResponse
 import logging
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,40 @@ class OpenMeteoProvider(WeatherProvider, ForecastProvider):
     def is_configured(self) -> bool:
         return True  # Open access, requires no private API keys
 
+    async def search_locations_api(self, query: str, count: int = 8) -> List[Dict[str, Any]]:
+        """
+        Searches real geographical locations worldwide (cities, towns, villages, localities, districts, countries)
+        via Open-Meteo Geocoding API.
+        """
+        if not query or len(query.strip()) < 2:
+            return []
+        clean_q = query.strip()
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                res = await client.get(
+                    self.GEO_URL,
+                    params={"name": clean_q, "count": count, "language": "en", "format": "json"},
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    results = data.get("results") or []
+                    formatted = []
+                    for item in results:
+                        formatted.append({
+                            "name": item.get("name", clean_q),
+                            "state": item.get("admin1", ""),
+                            "district": item.get("admin2", ""),
+                            "country": item.get("country_code", "IN").upper(),
+                            "country_name": item.get("country", ""),
+                            "latitude": float(item["latitude"]),
+                            "longitude": float(item["longitude"]),
+                            "timezone": item.get("timezone", "UTC"),
+                        })
+                    return formatted
+        except Exception as e:
+            logger.warning(f"Geocoding search API error: {e}")
+        return []
+
     async def resolve_coordinates(
         self, city: Optional[str], lat: Optional[float], lon: Optional[float]
     ) -> tuple[float, float, str, str, str]:
@@ -92,23 +127,16 @@ class OpenMeteoProvider(WeatherProvider, ForecastProvider):
 
         # Query Geocoding API
         try:
-            async with httpx.AsyncClient(timeout=8.0) as client:
-                res = await client.get(
-                    self.GEO_URL,
-                    params={"name": city or "Chennai", "count": 1, "language": "en", "format": "json"},
+            matches = await self.search_locations_api(city or "Chennai", count=1)
+            if matches and len(matches) > 0:
+                first = matches[0]
+                return (
+                    first["latitude"],
+                    first["longitude"],
+                    first["name"],
+                    first["state"],
+                    first["country"],
                 )
-                if res.status_code == 200:
-                    data = res.json()
-                    results = data.get("results")
-                    if results and len(results) > 0:
-                        first = results[0]
-                        return (
-                            float(first["latitude"]),
-                            float(first["longitude"]),
-                            first["name"],
-                            first.get("admin1", ""),
-                            first.get("country_code", "IN").upper(),
-                        )
         except Exception as e:
             logger.warning(f"Geocoding API error: {e}. Falling back to default Chennai.")
 
@@ -297,6 +325,74 @@ class OpenMeteoProvider(WeatherProvider, ForecastProvider):
             source="Open-Meteo NWP Forecast Service (ECMWF & GFS Hybrid)",
             attribution_notes="7-Day high-resolution forecast derived from meteorological numerical models",
         )
+
+    async def get_common_forecast(
+        self, lat: float, lon: float, days: int = 5
+    ) -> CommonModelForecastResponse:
+        """Normalizes Open-Meteo forecast into CommonModelForecastResponse."""
+        try:
+            norm = await self.get_forecast(lat=lat, lon=lon, days=days)
+            common_items: List[CommonForecastItem] = []
+            for item in norm.forecast:
+                avail = ["temperature", "humidity", "wind_speed"]
+                if item.rain_mm is not None:
+                    avail.append("precipitation")
+                if item.pop is not None:
+                    avail.append("precipitation_probability")
+                if item.feels_like is not None:
+                    avail.append("feels_like")
+                if item.condition is not None:
+                    avail.append("condition")
+
+                common_items.append(
+                    CommonForecastItem(
+                        provider="open_meteo",
+                        model="ECMWF / Open-Meteo Multi-Model Ensemble",
+                        source=norm.source,
+                        run_time="Latest Cycle",
+                        forecast_time=item.time,
+                        latitude=lat,
+                        longitude=lon,
+                        temperature=item.temperature,
+                        feels_like=item.feels_like,
+                        humidity=item.humidity,
+                        precipitation=item.rain_mm,
+                        precipitation_probability=item.pop,
+                        wind_speed=item.wind_speed,
+                        wind_direction=item.wind_deg,
+                        condition=item.condition,
+                        available_variables=avail,
+                    )
+                )
+
+            return CommonModelForecastResponse(
+                provider="open_meteo",
+                model="ECMWF / Open-Meteo Multi-Model Ensemble",
+                source="Open-Meteo WMO Meteorological Service",
+                available=True,
+                configured=True,
+                status="Available / Operational",
+                resolution="1.0 km - 11 km",
+                run_time="Latest Synchronized",
+                latitude=lat,
+                longitude=lon,
+                forecast_items=common_items,
+                attribution_notes="Open-Meteo ECMWF / GFS ensemble feed.",
+            )
+        except Exception as ex:
+            logger.warning(f"Failed to fetch Open-Meteo common forecast: {ex}")
+            return CommonModelForecastResponse(
+                provider="open_meteo",
+                model="ECMWF / Open-Meteo Multi-Model Ensemble",
+                source="Open-Meteo WMO Meteorological Service",
+                available=False,
+                configured=True,
+                status=f"Open-Meteo temporarily unavailable ({str(ex)})",
+                latitude=lat,
+                longitude=lon,
+                forecast_items=[],
+                attribution_notes="Upstream Open-Meteo service failure.",
+            )
 
     async def get_climate_history(
         self,

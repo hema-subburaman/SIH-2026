@@ -17,8 +17,10 @@ import {
 } from 'lucide-react';
 import SourceAttribution from '../components/SourceAttribution';
 import { fetchDetailedForecast } from '../services/api';
+import { UI_TRANSLATIONS } from '../utils/constants';
 
-export default function ForecastPage({ forecastData, currentCity, coordinates }) {
+export default function ForecastPage({ forecastData, currentCity, coordinates, currentLang = 'en' }) {
+  const t = UI_TRANSLATIONS[currentLang] || UI_TRANSLATIONS.en;
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [detailedData, setDetailedData] = useState(null);
   const [loadingDetailed, setLoadingDetailed] = useState(false);
@@ -42,7 +44,7 @@ export default function ForecastPage({ forecastData, currentCity, coordinates })
   if (!forecastData || !forecastData.forecast || forecastData.forecast.length === 0) {
     return (
       <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-        Loading high-resolution numerical forecast data for {currentCity}...
+        {t.loadingForecast ? t.loadingForecast.replace('{city}', currentCity) : `Loading high-resolution numerical forecast data for ${currentCity}...`}
       </div>
     );
   }
@@ -62,13 +64,22 @@ export default function ForecastPage({ forecastData, currentCity, coordinates })
   const formatDayName = (dateStr) => {
     const date = new Date(dateStr);
     const today = new Date();
-    if (date.toDateString() === today.toDateString()) return 'Today';
+    if (date.toDateString() === today.toDateString()) return t.today || 'Today';
     
     const tomorrow = new Date();
     tomorrow.setDate(today.getDate() + 1);
-    if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
+    if (date.toDateString() === tomorrow.toDateString()) return t.tomorrow || 'Tomorrow';
 
-    return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    return date.toLocaleDateString(currentLang === 'ta' ? 'ta-IN' : (currentLang === 'hi' ? 'hi-IN' : 'en-US'), { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  const getLocalizedSuitability = (label) => {
+    if (!label) return '';
+    const clean = label.toLowerCase();
+    if (clean.includes('optimal')) return t.optimal || 'Optimal';
+    if (clean.includes('caution') || clean.includes('moderate')) return t.moderateCaution || 'Moderate Caution';
+    if (clean.includes('unfavorable')) return t.unfavorable || 'Unfavorable';
+    return label;
   };
 
   const activeDayKey = dayKeys[selectedDayIndex] || dayKeys[0];
@@ -109,57 +120,41 @@ export default function ForecastPage({ forecastData, currentCity, coordinates })
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 800 }}>Numerical Weather Forecast</h2>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 800 }}>{t.forecastTitle || 'Numerical Weather Forecast'}</h2>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            High-resolution multi-day predictions and precipitation probabilities for <strong>{currentCity}</strong>.
+            {t.forecastSubtitle || 'Atmospheric simulations across morning, afternoon, evening, and overnight periods'} ({currentCity}).
           </p>
         </div>
       </div>
 
       {/* Weekend Outlook Highlight Banner if available */}
       {detailedData?.weekend?.available && (
-        <div className="glass-panel" style={{
-          padding: '1rem 1.25rem',
-          marginBottom: '1.5rem',
-          background: 'rgba(56, 189, 248, 0.05)',
-          border: '1px solid rgba(56, 189, 248, 0.25)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: '1rem'
-        }}>
+        <div className="glass-panel forecast-weekend-banner">
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.825rem', fontWeight: 700, color: 'var(--accent-cyan)' }}>
               <Calendar size={16} />
-              <span>Weekend Weather Outlook</span>
+              <span>{t.weekend || 'Weekend'} Weather Outlook</span>
             </div>
             <div style={{ fontSize: '0.85rem', color: '#e2e8f0', marginTop: '2px' }}>
               {detailedData.weekend.weekend_verdict}
             </div>
           </div>
-          <div style={{
+          <div className="forecast-weekend-recommendation" style={{
             padding: '0.4rem 0.75rem',
             background: 'rgba(0,0,0,0.3)',
             borderRadius: 'var(--radius-sm)',
             fontSize: '0.75rem',
-            color: 'var(--text-secondary)',
-            whiteSpace: 'nowrap'
+            color: 'var(--text-secondary)'
           }}>
             {detailedData.weekend.outdoor_recommendation}
           </div>
         </div>
       )}
 
-      {/* Daily Overview Cards Row */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(${Math.min(dayKeys.length, 7)}, 1fr)`,
-        gap: '0.75rem',
-        marginBottom: '1.5rem',
-        overflowX: 'auto'
-      }}>
+      {/* Daily Overview Cards Row - Responsive Multi-Column CSS Grid */}
+      <div className="forecast-cards-grid">
         {dayKeys.map((dayKey, idx) => {
           const items = groupedDays[dayKey];
           const maxT = Math.max(...items.map(i => i.temperature_max || i.temperature));
@@ -172,9 +167,8 @@ export default function ForecastPage({ forecastData, currentCity, coordinates })
             <div
               key={dayKey}
               onClick={() => setSelectedDayIndex(idx)}
-              className="glass-panel"
+              className="glass-panel forecast-card-item"
               style={{
-                padding: '1rem 0.85rem',
                 cursor: 'pointer',
                 textAlign: 'center',
                 borderColor: selectedDayIndex === idx ? 'var(--accent-cyan)' : 'var(--border-subtle)',
@@ -220,7 +214,7 @@ export default function ForecastPage({ forecastData, currentCity, coordinates })
                   fontWeight: 700,
                   color: summary.event_suitability_score >= 70 ? 'var(--accent-emerald)' : (summary.event_suitability_score >= 45 ? 'var(--accent-amber)' : 'var(--accent-rose)')
                 }}>
-                  {summary.event_suitability_label}
+                  {getLocalizedSuitability(summary.event_suitability_label)}
                 </div>
               )}
             </div>
@@ -233,10 +227,10 @@ export default function ForecastPage({ forecastData, currentCity, coordinates })
         <div style={{ marginBottom: '1.5rem' }}>
           <h3 style={{ fontSize: '1.05rem', fontWeight: 700, marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <Layers size={16} style={{ color: 'var(--accent-cyan)' }} />
-            <span>Time-of-Day Breakdown ({formatDayName(activeDayKey)})</span>
+            <span>{t.dayPartsOutlook || 'Day-Parts Breakdown'} ({formatDayName(activeDayKey)})</span>
           </h3>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem' }}>
+          <div className="forecast-dayparts-grid">
             {selectedSummary.parts.map((p, pIdx) => (
               <div
                 key={pIdx}
@@ -247,7 +241,7 @@ export default function ForecastPage({ forecastData, currentCity, coordinates })
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                     {getDayPartIcon(p.part)}
                     <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fff', textTransform: 'capitalize' }}>
-                      {p.part}
+                      {t[p.part] || p.part}
                     </span>
                   </div>
                   <span style={{ fontSize: '1.15rem', fontWeight: 800 }}>
@@ -279,10 +273,10 @@ export default function ForecastPage({ forecastData, currentCity, coordinates })
           marginBottom: '1.5rem',
           borderLeft: `4px solid ${selectedSummary.event_suitability_score >= 70 ? 'var(--accent-emerald)' : (selectedSummary.event_suitability_score >= 45 ? 'var(--accent-amber)' : 'var(--accent-rose)')}`
         }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div className="forecast-suitability-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '0.95rem', fontWeight: 800, color: '#fff' }}>
-                Outdoor Event Suitability ({formatDayName(activeDayKey)})
+                {t.activitySuitability || 'Outdoor Event Suitability'} ({formatDayName(activeDayKey)})
               </span>
               <span style={{
                 fontSize: '0.75rem',
@@ -292,11 +286,11 @@ export default function ForecastPage({ forecastData, currentCity, coordinates })
                 background: selectedSummary.event_suitability_score >= 70 ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
                 color: selectedSummary.event_suitability_score >= 70 ? 'var(--accent-emerald)' : 'var(--accent-amber)',
               }}>
-                {selectedSummary.event_suitability_label} ({selectedSummary.event_suitability_score}/100)
+                {getLocalizedSuitability(selectedSummary.event_suitability_label)} ({selectedSummary.event_suitability_score}/100)
               </span>
             </div>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Total Predicted Rain: <strong>{selectedSummary.total_rain_mm} mm</strong>
+              {t.expectedRain || 'Total Predicted Rain'}: <strong>{selectedSummary.total_rain_mm} mm</strong>
             </span>
           </div>
 
@@ -312,17 +306,17 @@ export default function ForecastPage({ forecastData, currentCity, coordinates })
           <div>
             <h3 style={{ fontSize: '1.05rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <Clock size={16} style={{ color: 'var(--accent-cyan)' }} />
-              <span>Hourly Temperature & Precipitation Timeline ({formatDayName(activeDayKey)})</span>
+              <span>{t.detailedTimeline || 'Hourly Temperature & Precipitation Timeline'} ({formatDayName(activeDayKey)})</span>
             </h3>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Detailed 3-hour forecast intervals showing ambient temperatures and precipitation risk.
+              {t.detailedTimeline || 'Detailed 3-hour forecast intervals showing ambient temperatures and precipitation risk.'}
             </p>
           </div>
         </div>
 
         {/* SVG Curve Chart */}
-        <div style={{ width: '100%', overflowX: 'auto' }}>
-          <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} style={{ width: '100%', minWidth: '600px', height: '180px' }}>
+        <div className="chart-scroll-container">
+          <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} style={{ width: '100%', minWidth: '460px', height: '160px', display: 'block' }}>
             <defs>
               <linearGradient id="tempGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.4" />
@@ -368,46 +362,42 @@ export default function ForecastPage({ forecastData, currentCity, coordinates })
         </div>
 
         {/* Hourly Metric Blocks Table */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${activeDayItems.length}, 1fr)`,
-          gap: '0.5rem',
-          marginTop: '1.25rem',
-          overflowX: 'auto'
-        }}>
-          {activeDayItems.map((item, idx) => (
-            <div
-              key={idx}
-              style={{
-                background: 'rgba(0, 0, 0, 0.25)',
-                padding: '0.75rem 0.5rem',
-                borderRadius: 'var(--radius-sm)',
-                textAlign: 'center',
-                minWidth: '85px'
-              }}
-            >
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                {item.time.split(' ')[1]?.slice(0, 5) || item.time.split('T')[1]?.slice(0, 5)}
+        <div className="chart-scroll-container" style={{ marginTop: '1.25rem' }}>
+          <div className="hourly-blocks-row">
+            {activeDayItems.map((item, idx) => (
+              <div
+                key={idx}
+                style={{
+                  background: 'rgba(0, 0, 0, 0.25)',
+                  padding: '0.75rem 0.5rem',
+                  borderRadius: 'var(--radius-sm)',
+                  textAlign: 'center',
+                  minWidth: '85px'
+                }}
+              >
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                  {item.time.split(' ')[1]?.slice(0, 5) || item.time.split('T')[1]?.slice(0, 5)}
+                </div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-cyan)', marginBottom: '4px' }}>
+                  {item.condition}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  💧 {item.humidity}%
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  💨 {item.wind_speed} m/s
+                </div>
+                <div style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  color: item.pop >= 0.4 ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                  marginTop: '4px'
+                }}>
+                  🌧️ {Math.round(item.pop * 100)}%
+                </div>
               </div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-cyan)', marginBottom: '4px' }}>
-                {item.condition}
-              </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                💧 {item.humidity}%
-              </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
-                💨 {item.wind_speed} m/s
-              </div>
-              <div style={{
-                fontSize: '0.72rem',
-                fontWeight: 600,
-                color: item.pop >= 0.4 ? 'var(--accent-cyan)' : 'var(--text-muted)',
-                marginTop: '4px'
-              }}>
-                🌧️ {Math.round(item.pop * 100)}%
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
 
         <SourceAttribution source={source} note={attribution_notes} />

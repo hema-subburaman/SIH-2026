@@ -36,11 +36,12 @@ class RiskAnalysisRequest(BaseModel):
     feels_like: Optional[float] = None
     humidity: int
     wind_speed: float
-    condition: str
+    condition: Optional[str] = "Simulated Conditions"
     pop: Optional[float] = 0.0  # Precipitation probability
     visibility: Optional[float] = None
     target_time: Optional[str] = "Current"
     language: Optional[str] = "en"
+    custom_scenario: Optional[str] = Field(None, description="Optional natural language scenario context")
 
 
 class RiskAnalysisResponse(BaseModel):
@@ -55,3 +56,4 @@ class RiskAnalysisResponse(BaseModel):
         "model for planning purposes. Prototype thresholds are not official medical or government safety standards."
     )
     source: str = "Weather Impact Intelligence Engine"
+    custom_scenario: Optional[str] = None

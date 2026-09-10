@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { TrendingUp, BarChart3, CloudRain, Thermometer, ShieldAlert, History, Calendar } from 'lucide-react';
 import { fetchClimateTrends } from '../services/api';
 import SourceAttribution from '../components/SourceAttribution';
+import { UI_TRANSLATIONS } from '../utils/constants';
 
-export default function ClimatePage({ currentCity, coordinates }) {
+export default function ClimatePage({ currentCity, coordinates, currentLang = 'en' }) {
+  const t = UI_TRANSLATIONS[currentLang] || UI_TRANSLATIONS.en;
   const [climateData, setClimateData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [timespan, setTimespan] = useState(10); // 10, 15, 20 years
@@ -26,7 +28,7 @@ export default function ClimatePage({ currentCity, coordinates }) {
   if (loading) {
     return (
       <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-        Retrieving historical meteorological reanalysis archives (ERA5 / WMO) for {currentCity}...
+        {t.loadingClimate ? t.loadingClimate.replace('{city}', currentCity) : `Retrieving historical meteorological reanalysis archives (ERA5 / WMO) for ${currentCity}...`}
       </div>
     );
   }
@@ -35,13 +37,13 @@ export default function ClimatePage({ currentCity, coordinates }) {
     return (
       <div className="glass-panel" style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
         <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f1f5f9', marginBottom: '0.5rem' }}>
-          Historical climate data temporarily unavailable.
+          {t.climateUnavailableTitle || 'Historical climate data temporarily unavailable.'}
         </div>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', maxWidth: '520px', margin: '0 auto 1rem auto' }}>
-          {climateData?.message || `Historical climate records for ${currentCity} could not be retrieved from the observational archive.`}
+          {climateData?.message || (t.climateUnavailableDesc ? t.climateUnavailableDesc.replace('{city}', currentCity) : `Historical climate records for ${currentCity} could not be retrieved from the observational archive.`)}
         </p>
         <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>
-          SIH Data Integrity Protocol: Zero synthetic or mathematically generated climate data.
+          {t.climateProtocol || 'Data Integrity Protocol: Zero synthetic or mathematically generated climate data.'}
         </div>
         {climateData?.source && (
           <SourceAttribution source={climateData.source} note="Verified reanalysis feed" />
@@ -58,7 +60,7 @@ export default function ClimatePage({ currentCity, coordinates }) {
   const padX = 45;
   const padY = 35;
 
-  const temps = data_points.map(d => d.avg_temp);
+  const temps = data_points.map((d) => d.avg_temp);
   const minT = Math.min(...temps) - 0.5;
   const maxT = Math.max(...temps) + 0.5;
   const rangeT = maxT - minT || 1;
@@ -70,25 +72,32 @@ export default function ClimatePage({ currentCity, coordinates }) {
   });
 
   const pathD = points.length > 0
-    ? `M ${points[0].x} ${points[0].y} ` + points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ')
+    ? `M ${points[0].x} ${points[0].y} ` + points.slice(1).map((p) => `L ${p.x} ${p.y}`).join(' ')
     : '';
+
+  const getTimespanLabel = (yr) => {
+    if (yr === 10) return t.years10 || '10 Years';
+    if (yr === 15) return t.years15 || '15 Years';
+    if (yr === 20) return t.years20 || '20 Years';
+    return `${yr} Years`;
+  };
 
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <TrendingUp size={22} style={{ color: 'var(--accent-cyan)' }} />
-            <span>Climate Trends & Historical Telemetry</span>
+            <span>{t.climateTitle || 'Climate Trends & Historical Telemetry'}</span>
           </h2>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            Long-term climate reanalysis and thermal anomaly observations for <strong>{currentCity}</strong>.
+            {t.climateSubtitle || 'Long-term temperature trajectories and anomaly observations derived from ERA5 reanalysis archives'} ({currentCity}).
           </p>
         </div>
 
         {/* Timespan Selector */}
-        <div style={{ display: 'flex', gap: '0.4rem' }}>
+        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
           {[10, 15, 20].map((yr) => (
             <button
               key={yr}
@@ -96,31 +105,31 @@ export default function ClimatePage({ currentCity, coordinates }) {
               className={`preset-chip ${timespan === yr ? 'active' : ''}`}
               onClick={() => setTimespan(yr)}
             >
-              {yr} Years
+              {getTimespanLabel(yr)}
             </button>
           ))}
         </div>
       </div>
 
-      {/* 3 Metric Highlight Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+      {/* 3 Metric Highlight Cards - Responsive Grid */}
+      <div className="climate-metrics-grid">
         <div className="glass-panel" style={{ padding: '1.25rem' }}>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             <History size={14} style={{ color: 'var(--accent-indigo)' }} />
-            <span>Observational Baseline Mean</span>
+            <span>{t.baselineAvg || 'Observational Baseline Mean'}</span>
           </div>
           <div style={{ fontSize: '1.75rem', fontWeight: 800, color: '#fff', margin: '4px 0' }}>
             {baseline_avg_temp.toFixed(1)}°C
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            Historical 3-year initial benchmark
+            Historical benchmark
           </div>
         </div>
 
         <div className="glass-panel" style={{ padding: '1.25rem' }}>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             <Thermometer size={14} style={{ color: 'var(--accent-rose)' }} />
-            <span>Recent Decadal Mean</span>
+            <span>{t.recentAvg || 'Recent Decadal Mean'}</span>
           </div>
           <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--accent-rose)', margin: '4px 0' }}>
             {recent_avg_temp.toFixed(1)}°C
@@ -133,7 +142,7 @@ export default function ClimatePage({ currentCity, coordinates }) {
         <div className="glass-panel" style={{ padding: '1.25rem' }}>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             <TrendingUp size={14} style={{ color: 'var(--accent-amber)' }} />
-            <span>Decadal Trend Rate</span>
+            <span>{t.warmingRate || 'Decadal Trend Rate'}</span>
           </div>
           <div style={{ fontSize: '1.75rem', fontWeight: 800, color: temp_change_rate >= 0 ? 'var(--accent-amber)' : 'var(--accent-emerald)', margin: '4px 0' }}>
             {temp_change_rate >= 0 ? `+${temp_change_rate}°C` : `${temp_change_rate}°C`}
@@ -149,7 +158,7 @@ export default function ClimatePage({ currentCity, coordinates }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <div>
             <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>
-              Annual Mean Temperature Curve ({data_points[0]?.year} - {data_points[data_points.length - 1]?.year})
+              {t.annualMeanTemp || 'Annual Mean Temperature Curve'} ({data_points[0]?.year} - {data_points[data_points.length - 1]?.year})
             </h3>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               Verified observational records from global reanalysis grids.
@@ -158,8 +167,8 @@ export default function ClimatePage({ currentCity, coordinates }) {
         </div>
 
         {/* SVG Chart */}
-        <div style={{ width: '100%', overflowX: 'auto' }}>
-          <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} style={{ width: '100%', minWidth: '600px', height: '230px' }}>
+        <div className="chart-scroll-container">
+          <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} style={{ width: '100%', minWidth: '460px', height: '220px', display: 'block' }}>
             <defs>
               <linearGradient id="climateGrad" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.3" />

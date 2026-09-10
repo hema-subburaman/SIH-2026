@@ -24,7 +24,8 @@ async def analyze_risk(payload: RiskAnalysisRequest):
             feels_like=payload.feels_like,
             visibility=payload.visibility,
             target_time=payload.target_time or "Current",
-            language=payload.language or "en"
+            language=payload.language or "en",
+            custom_scenario=payload.custom_scenario
         )
         return response
     except Exception as e:

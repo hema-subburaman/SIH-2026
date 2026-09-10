@@ -12,17 +12,19 @@ import {
 } from 'lucide-react';
 import { verifyClaim } from '../services/api';
 import SourceAttribution from '../components/SourceAttribution';
+import { UI_TRANSLATIONS } from '../utils/constants';
 
-export default function VerifyClaimPage({ currentCity, coordinates }) {
+export default function VerifyClaimPage({ currentCity, coordinates, currentLang = 'en' }) {
+  const t = UI_TRANSLATIONS[currentLang] || UI_TRANSLATIONS.en;
   const [claimInput, setClaimInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
 
   const sampleClaims = [
-    `There is a cyclone warning in ${currentCity} right now`,
-    `It is raining now in ${currentCity}`,
-    `Tomorrow will be very hot in ${currentCity}`,
-    `Wind speeds will exceed 40 km/h tomorrow`
+    (t.sample_cyclone || 'There is a cyclone warning in {city} right now').replace('{city}', currentCity),
+    (t.sample_rain || 'It is raining now in {city}').replace('{city}', currentCity),
+    (t.sample_hot || 'Tomorrow will be very hot in {city}').replace('{city}', currentCity),
+    (t.sample_wind || 'Wind speeds will exceed 40 km/h tomorrow').replace('{city}', currentCity),
   ];
 
   const handleVerify = async (textToVerify) => {
@@ -51,16 +53,24 @@ export default function VerifyClaimPage({ currentCity, coordinates }) {
     }
   };
 
+  const getLocalizedVerdict = (status) => {
+    switch (status) {
+      case 'VERIFIED': return t.verified || 'VERIFIED';
+      case 'CONTRADICTED': return t.contradicted || 'CONTRADICTED';
+      default: return t.unverified || 'UNVERIFIED';
+    }
+  };
+
   return (
     <div>
       {/* Header */}
       <div style={{ marginBottom: '1.5rem' }}>
         <h2 style={{ fontSize: '1.4rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <FileCheck size={22} style={{ color: 'var(--accent-cyan)' }} />
-          <span>Meteorological Fact-Check & Claim Verification</span>
+          <span>{t.verifyTitle || 'Meteorological Fact-Check & Claim Verification'}</span>
         </h2>
         <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-          Combat weather misinformation and social media rumors by verifying statements against live observational telemetry and official warning archives for <strong>{currentCity}</strong>.
+          {t.verifySubtitle || 'Combat weather misinformation and social media rumors by verifying statements against live observational telemetry and official warning archives'} ({currentCity}).
         </p>
       </div>
 
@@ -71,28 +81,31 @@ export default function VerifyClaimPage({ currentCity, coordinates }) {
             e.preventDefault();
             handleVerify();
           }}
-          style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}
+          className="verify-claim-form"
         >
           <input
             type="text"
             className="chat-input"
-            placeholder={`Enter weather statement to verify (e.g. "There is a cyclone warning in ${currentCity}")...`}
+            style={{ flex: 1, minWidth: '0' }}
+            placeholder={t.claimPlaceholder || `Enter weather statement to verify...`}
             value={claimInput}
             onChange={(e) => setClaimInput(e.target.value)}
           />
           <button
             type="submit"
-            className="send-btn"
+            className="send-btn verify-btn"
             disabled={loading || !claimInput.trim()}
           >
             <Search size={16} />
-            <span>Verify Claim</span>
+            <span>{t.verifyBtn || 'Verify Claim'}</span>
           </button>
         </form>
 
         {/* Quick Sample Claims */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Try sample claims:</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            {t.sampleClaimsTitle || 'Try sample claims:'}
+          </span>
           {sampleClaims.map((c, idx) => (
             <button
               key={idx}
@@ -112,18 +125,18 @@ export default function VerifyClaimPage({ currentCity, coordinates }) {
       {/* Verification Result Card */}
       {loading ? (
         <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-          Cross-referencing sensor observations, numerical forecasts, and IMD warning bulletins...
+          {t.verifyingClaim || 'Cross-referencing sensor observations, numerical forecasts, and IMD warning bulletins...'}
         </div>
       ) : result ? (
         <div className="glass-panel" style={{ padding: '1.75rem', borderLeft: `5px solid ${result.status === 'VERIFIED' ? 'var(--accent-emerald)' : (result.status === 'CONTRADICTED' ? 'var(--accent-rose)' : 'var(--accent-amber)')}` }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
               <span className={`verdict-badge ${result.status}`}>
                 {getVerdictIcon(result.status)}
-                <span>{result.status}</span>
+                <span>{getLocalizedVerdict(result.status)}</span>
               </span>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                Confidence: <strong>{Math.round(result.confidence * 100)}%</strong>
+                {t.confidenceScore || 'Confidence:'} <strong>{Math.round(result.confidence * 100)}%</strong>
               </span>
             </div>
 
@@ -142,7 +155,7 @@ export default function VerifyClaimPage({ currentCity, coordinates }) {
           {/* Evidence Checklist */}
           <div style={{ marginTop: '1rem' }}>
             <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '0.5rem' }}>
-              Corroborating Telemetry & Evidence Factors:
+              {t.verifiedEvidence || 'Corroborating Telemetry & Evidence Factors:'}
             </h4>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
               {result.evidence_factors.map((ev, i) => (
@@ -180,7 +193,7 @@ export default function VerifyClaimPage({ currentCity, coordinates }) {
             gap: '0.5rem'
           }}>
             <Info size={15} style={{ color: 'var(--accent-amber)', flexShrink: 0, marginTop: '2px' }} />
-            <div>{result.disclaimer}</div>
+            <div>{result.disclaimer || t.claimDisclaimer}</div>
           </div>
 
           <SourceAttribution source={result.source_attribution} />

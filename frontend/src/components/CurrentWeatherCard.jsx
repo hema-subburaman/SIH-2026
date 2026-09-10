@@ -15,7 +15,7 @@ import {
 import RiskBadge from './RiskBadge';
 import ExplainableFactors from './ExplainableFactors';
 import SourceAttribution from './SourceAttribution';
-import { UI_TRANSLATIONS } from '../utils/constants';
+import { UI_TRANSLATIONS, getLocalizedActivity } from '../utils/constants';
 
 export default function CurrentWeatherCard({ weatherData, riskData, language = 'en', onOpenWhatIf }) {
   const t = UI_TRANSLATIONS[language] || UI_TRANSLATIONS.en;
@@ -23,12 +23,13 @@ export default function CurrentWeatherCard({ weatherData, riskData, language = '
   if (!weatherData || !weatherData.current) {
     return (
       <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-        Loading real-time meteorological observations...
+        {t.loading || 'Loading real-time meteorological observations...'}
       </div>
     );
   }
 
   const { location, current, source } = weatherData;
+  const locActivity = riskData?.activity ? getLocalizedActivity(riskData.activity, language) : null;
 
   return (
     <div className="weather-hero">
@@ -44,7 +45,7 @@ export default function CurrentWeatherCard({ weatherData, riskData, language = '
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <span className="source-tag">
               <Sparkles size={11} style={{ color: 'var(--accent-cyan)' }} />
-              <span>Real-Time Observation</span>
+              <span>{t.sourceTelemetry || 'Live Meteorological Telemetry'}</span>
             </span>
           </div>
         </div>
@@ -98,7 +99,8 @@ export default function CurrentWeatherCard({ weatherData, riskData, language = '
         {(current.sunrise || current.sunset) && (
           <div style={{
             display: 'flex',
-            gap: '1.5rem',
+            gap: '1rem',
+            flexWrap: 'wrap',
             marginTop: '0.85rem',
             fontSize: '0.8rem',
             color: 'var(--text-secondary)'
@@ -133,7 +135,7 @@ export default function CurrentWeatherCard({ weatherData, riskData, language = '
           </div>
 
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            Activity Profile: <strong style={{ color: '#fff', textTransform: 'capitalize' }}>{riskData?.activity?.replace('_', ' ') || 'General Outdoor'}</strong>
+            Activity Profile: <strong style={{ color: '#fff' }}>{locActivity?.label || riskData?.activity?.replace('_', ' ') || 'General Outdoor'}</strong>
           </div>
 
           {riskData ? (
@@ -144,7 +146,7 @@ export default function CurrentWeatherCard({ weatherData, riskData, language = '
             />
           ) : (
             <div style={{ padding: '1rem', color: 'var(--text-muted)', fontSize: '0.825rem' }}>
-              Calculating activity-specific decision support...
+              {t.evaluatingRisk || 'Calculating activity-specific decision support...'}
             </div>
           )}
         </div>
@@ -169,7 +171,7 @@ export default function CurrentWeatherCard({ weatherData, riskData, language = '
               fontFamily: 'inherit'
             }}
           >
-            <span>Simulate Activities in What-If Dashboard →</span>
+            <span>{t.viewWhatIfAnalysis || 'Simulate Operational Impact (What-If) →'}</span>
           </button>
         )}
       </div>

@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from app.schemas.chat import ChatQueryRequest
@@ -298,3 +299,101 @@ async def test_claim_verification_regression():
     res = await claim_verifier.verify_claim(req)
     assert res.status in [ClaimStatus.VERIFIED, ClaimStatus.UNVERIFIED]
     assert res.official_warning_checked is True
+
+
+# 16. WebSocket /ws/alerts endpoint handshake, ping-pong, and disconnect tests
+def test_websocket_alerts_handshake_and_ping_pong():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.services.alert_service import alert_service
+
+    initial_count = len(alert_service.active_connections)
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws/alerts") as websocket:
+        # Verify connection registered
+        assert len(alert_service.active_connections) == initial_count + 1
+
+        # Test raw text ping -> pong
+        websocket.send_text("ping")
+        data = websocket.receive_text()
+        assert data == "pong"
+
+        # Test JSON ping -> pong
+        websocket.send_text('{"type": "ping"}')
+        data2 = websocket.receive_text()
+        assert data2 == "pong"
+
+    # Verify clean disconnection cleanup
+    assert len(alert_service.active_connections) == initial_count
+
+
+# 17. What-If Scenario Simulator & Custom Scenario Workflow Test
+def test_whatif_simulator_exact_workflow_requirement():
+    """
+    Tests the exact workflow:
+    Activity: Running / Jogging
+    Timeframe: Tomorrow Evening
+    Temperature: 35
+    Humidity: 80
+    Wind Speed: 15
+    Rain Probability: 50
+    Custom Scenario: 'Can I go running tomorrow evening in Chennai?'
+    """
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    payload = {
+        "activity": "running",
+        "temperature": 35.0,
+        "humidity": 80,
+        "wind_speed": 15.0,
+        "condition": "Scattered Clouds",
+        "pop": 50.0,
+        "target_time": "tomorrow_evening",
+        "custom_scenario": "Can I go running tomorrow evening in Chennai?"
+    }
+
+    resp = client.post("/api/v1/risk/analyze", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["activity"] == "running"
+    assert data["risk_level"] == "HIGH"
+    assert data["score"] >= 60.0
+    assert data["custom_scenario"] == "Can I go running tomorrow evening in Chennai?"
+    assert "Can I go running tomorrow evening in Chennai?" in data["explanation"]
+    assert "not recommended" in data["recommendation"].lower() or "postpone" in data["recommendation"].lower()
+    assert len(data["factors"]) >= 3
+    assert data["disclaimer"] is not None
+    assert data["source"] == "Weather Impact Intelligence Engine"
+
+
+def test_whatif_simulator_outdoor_event_scenario():
+    """Tests custom scenario with outdoor event under benign weather conditions."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    payload = {
+        "activity": "outdoor_event",
+        "temperature": 26.0,
+        "humidity": 55,
+        "wind_speed": 3.0,
+        "condition": "Clear Sky",
+        "pop": 0.05,
+        "target_time": "tomorrow_evening",
+        "custom_scenario": "Can I conduct an outdoor college cultural event tomorrow evening in Chennai?"
+    }
+
+    resp = client.post("/api/v1/risk/analyze", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["activity"] == "outdoor_event"
+    assert data["risk_level"] == "LOW"
+    assert "favorable" in data["recommendation"].lower()
+    assert data["custom_scenario"] == "Can I conduct an outdoor college cultural event tomorrow evening in Chennai?"
+
+
