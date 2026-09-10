@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     # Visibility (meters)
     VISIBILITY_POOR: float = 2000.0
     
+    # Alert Polling Configuration
+    ALERT_POLL_INTERVAL_SECONDS: int = 300  # Default 5 minutes
+    MONITORED_ALERT_CITIES: List[str] = [
+        "Chennai", "Bengaluru", "Mumbai", "Delhi", "Kolkata", "Hyderabad"
+    ]
+    
     # Model Config
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -31,10 +31,21 @@ export default function ClimatePage({ currentCity, coordinates }) {
     );
   }
 
-  if (!climateData || !climateData.data_points || climateData.data_points.length === 0) {
+  if (!climateData || climateData.available === false || !climateData.data_points || climateData.data_points.length === 0) {
     return (
-      <div className="glass-panel" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-        Historical climate records currently unavailable for this coordinate grid.
+      <div className="glass-panel" style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+        <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f1f5f9', marginBottom: '0.5rem' }}>
+          Historical climate data temporarily unavailable.
+        </div>
+        <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', maxWidth: '520px', margin: '0 auto 1rem auto' }}>
+          {climateData?.message || `Historical climate records for ${currentCity} could not be retrieved from the observational archive.`}
+        </p>
+        <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>
+          SIH Data Integrity Protocol: Zero synthetic or mathematically generated climate data.
+        </div>
+        {climateData?.source && (
+          <SourceAttribution source={climateData.source} note="Verified reanalysis feed" />
+        )}
       </div>
     );
   }

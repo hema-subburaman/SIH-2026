@@ -37,6 +37,8 @@ class AlertItem(BaseModel):
     recommendation: str
     is_official: bool = Field(..., description="True if from official meteorological agency (IMD/Govt)")
     source: str = Field(..., description="Issuing authority name and source URL/reference")
+    provider: Optional[str] = None
+    data_type: str = "official_bulletin"
 
 
 class AlertsResponse(BaseModel):
@@ -45,6 +47,9 @@ class AlertsResponse(BaseModel):
     official_alerts: List[AlertItem] = []
     system_risks: List[AlertItem] = []
     source: str
+    provider: Optional[str] = None
+    official_coverage_available: bool = True
+    coverage_notice: Optional[str] = None
     note: str = (
         "Official warnings are sourced from authorized meteorological bodies (such as IMD). "
         "System weather risks are algorithmically derived from live threshold exceedances."

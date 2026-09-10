@@ -20,6 +20,7 @@ class ExtractedEntities(BaseModel):
     activity: Optional[str] = None
     weather_parameter: Optional[str] = None
     detected_language: str = "en"
+    is_llm_enhanced: bool = False
 
 
 class ChatQueryResponse(BaseModel):
@@ -34,5 +35,9 @@ class ChatQueryResponse(BaseModel):
     location_used: str
     weather_summary: Optional[Dict[str, Any]] = None
     source: str
+    provider: Optional[str] = None
+    data_type: str = "meteorological_analysis"
+    is_official: bool = False
+    is_llm_enhanced: bool = False
     official_warning: Optional[Dict[str, Any]] = None
     timestamp: str

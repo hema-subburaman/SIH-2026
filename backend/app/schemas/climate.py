@@ -14,14 +14,20 @@ class ClimateDataPoint(BaseModel):
 
 
 class ClimateTrendResponse(BaseModel):
+    available: bool = True
+    message: Optional[str] = None
     location: str
     latitude: float
     longitude: float
-    period: str  # e.g., "1994 - 2024 (30-year trend)"
-    baseline_avg_temp: float
-    recent_avg_temp: float
-    temp_change_rate: float = Field(..., description="Degrees Celsius increase/decade")
-    trend_summary: str
+    period: Optional[str] = None  # e.g., "1994 - 2024 (30-year trend)"
+    baseline_avg_temp: Optional[float] = None
+    recent_avg_temp: Optional[float] = None
+    temp_change_rate: Optional[float] = Field(None, description="Degrees Celsius increase/decade")
+    trend_summary: Optional[str] = None
     data_points: List[ClimateDataPoint] = []
     source: str = "Open-Meteo Historical Climate Reanalysis (ERA5) / Meteorological Archive"
+    provider: str = "Open-Meteo Historical Climate Service"
+    data_type: str = "historical_reanalysis"
+    is_official: bool = False
     citation: str = "Historical observational climate reanalysis data. Not a predictive forecast."
+    timestamp: Optional[str] = None

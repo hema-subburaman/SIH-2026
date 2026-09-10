@@ -113,3 +113,52 @@ class HistoricalWeather(Base):
     min_temperature = Column(Float, nullable=True)
     total_rainfall_mm = Column(Float, nullable=True)
     source = Column(String(150), nullable=False)
+
+
+class WeatherQueryAudit(Base):
+    """Audit log for user weather queries and extracted NLU entities."""
+    __tablename__ = "weather_query_audits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    query = Column(Text, nullable=False)
+    language = Column(String(10), default="en")
+    intent = Column(String(100), nullable=True)
+    location_used = Column(String(150), index=True, nullable=False)
+    target_date = Column(String(50), nullable=True)
+    target_time_slot = Column(String(50), nullable=True)
+    activity = Column(String(100), nullable=True)
+    risk_level = Column(String(50), nullable=True)
+    provider = Column(String(100), nullable=True)
+    source = Column(String(150), nullable=True)
+    is_llm_enhanced = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class AlertBroadcastAudit(Base):
+    """Audit log for disseminated official and emergency warnings."""
+    __tablename__ = "alert_broadcast_audits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    alert_id = Column(String(100), index=True, nullable=False)
+    event = Column(String(200), nullable=False)
+    severity = Column(String(50), nullable=False)
+    is_official = Column(Boolean, default=True)
+    location = Column(String(150), index=True, nullable=False)
+    source = Column(String(150), nullable=False)
+    provider = Column(String(100), nullable=True)
+    client_count = Column(Integer, default=0)
+    broadcast_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ClaimVerificationAudit(Base):
+    """Audit log for weather claim verification requests."""
+    __tablename__ = "claim_verification_audits"
+
+    id = Column(Integer, primary_key=True, index=True)
+    claim_text = Column(Text, nullable=False)
+    status = Column(String(50), nullable=False)  # VERIFIED, UNVERIFIED, CONTRADICTED
+    city = Column(String(150), index=True, nullable=False)
+    confidence = Column(Float, nullable=False)
+    official_warning_checked = Column(Boolean, default=False)
+    source_attribution = Column(String(150), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

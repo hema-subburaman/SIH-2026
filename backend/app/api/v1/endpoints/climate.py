@@ -24,4 +24,16 @@ async def get_climate_history(
         return data
     except Exception as e:
         logger.error(f"Error fetching climate trends: {e}")
-        raise HTTPException(status_code=500, detail="Historical climate retrieval failed")
+        return ClimateTrendResponse(
+            available=False,
+            message="Historical climate data is temporarily unavailable.",
+            location=city or "Chennai",
+            latitude=lat or 0.0,
+            longitude=lon or 0.0,
+            data_points=[],
+            source="Open-Meteo Historical Climate Service",
+            provider="Open-Meteo Historical Climate Service",
+            data_type="historical_reanalysis",
+            is_official=False,
+            citation="Historical climate data is temporarily unavailable."
+        )

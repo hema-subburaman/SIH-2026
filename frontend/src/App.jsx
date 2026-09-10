@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import CurrentWeatherCard from './components/CurrentWeatherCard';
+import AlertNotificationBanner from './components/AlertNotificationBanner';
 import ChatPage from './pages/ChatPage';
 import ForecastPage from './pages/ForecastPage';
 import WhatIfPage from './pages/WhatIfPage';
@@ -30,8 +31,61 @@ export default function App() {
   const [riskData, setRiskData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [incomingAlert, setIncomingAlert] = useState(null);
 
   const t = UI_TRANSLATIONS[currentLang] || UI_TRANSLATIONS.en;
+
+  // Real-time Official Warning WebSocket dissemination
+  useEffect(() => {
+    let ws = null;
+    let reconnectTimeout = null;
+    let pingInterval = null;
+
+    function connect() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      const wsUrl = `${protocol}//${host}/ws/alerts`;
+
+      try {
+        ws = new WebSocket(wsUrl);
+        ws.onopen = () => {
+          pingInterval = setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send('ping');
+            }
+          }, 30000);
+        };
+        ws.onmessage = (event) => {
+          try {
+            if (event.data === 'pong') return;
+            const payload = JSON.parse(event.data);
+            if (payload.type === 'OFFICIAL_WARNING_ALERT' && payload.alert) {
+              setIncomingAlert(payload.alert);
+            }
+          } catch (e) {
+            // Ignore keep-alive or heartbeat text
+          }
+        };
+        ws.onclose = () => {
+          clearInterval(pingInterval);
+          reconnectTimeout = setTimeout(connect, 5000);
+        };
+        ws.onerror = () => {
+          if (ws) ws.close();
+        };
+      } catch (e) {
+        reconnectTimeout = setTimeout(connect, 5000);
+      }
+    }
+
+    connect();
+
+    return () => {
+      clearInterval(pingInterval);
+      clearTimeout(reconnectTimeout);
+      if (ws) ws.close();
+    };
+  }, []);
 
   // Load weather and risk analysis whenever city or coordinates change
   useEffect(() => {
@@ -140,6 +194,12 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="app-content">
+        {/* Real-time Official Warning Broadcast Banner */}
+        <AlertNotificationBanner
+          incomingAlert={incomingAlert}
+          onDismiss={() => setIncomingAlert(null)}
+        />
+
         {/* Real-time Weather Summary Hero Card */}
         {weatherData && (
           <CurrentWeatherCard

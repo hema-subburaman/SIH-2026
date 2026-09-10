@@ -164,7 +164,12 @@ export default function AlertsPage({ currentCity, coordinates }) {
                 </span>
               </h3>
 
-              {combinedOfficial.length === 0 ? (
+              {alertsData?.official_coverage_available === false ? (
+                <div className="glass-panel" style={{ padding: '1.25rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  <Info size={20} style={{ color: 'var(--accent-cyan)', margin: '0 auto 6px auto' }} />
+                  {alertsData?.coverage_notice || `Official warning coverage is unavailable for ${currentCity}. IMD bulletins are tracked for recognized Indian cities and states.`}
+                </div>
+              ) : combinedOfficial.length === 0 ? (
                 <div className="glass-panel" style={{ padding: '1.25rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                   <CheckCircle size={20} style={{ color: 'var(--accent-emerald)', margin: '0 auto 6px auto' }} />
                   No severe official weather warnings (cyclones/floods) are active for <strong>{currentCity}</strong> in the national bulletin at this moment.

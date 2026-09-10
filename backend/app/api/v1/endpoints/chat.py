@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from app.schemas.chat import ChatQueryRequest, ChatQueryResponse
 from app.services.ai_service import ai_service
+from app.services.audit_service import audit_service
 import logging
 
 router = APIRouter()
@@ -16,6 +17,7 @@ async def chat_query(payload: ChatQueryRequest):
     """
     try:
         response = await ai_service.process_query(payload)
+        await audit_service.log_weather_query(response)
         return response
     except Exception as e:
         logger.error(f"Error in chat query: {e}")

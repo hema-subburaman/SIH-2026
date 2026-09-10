@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from app.schemas.claim import ClaimVerifyRequest, ClaimVerifyResponse
 from app.services.claim_verifier import claim_verifier
+from app.services.audit_service import audit_service
 import logging
 
 router = APIRouter()
@@ -15,6 +16,7 @@ async def verify_claim(payload: ClaimVerifyRequest):
     """
     try:
         data = await claim_verifier.verify_claim(payload)
+        await audit_service.log_claim_verification(payload.claim, payload.city or "Chennai", data)
         return data
     except Exception as e:
         logger.error(f"Error in /claim/verify: {e}")

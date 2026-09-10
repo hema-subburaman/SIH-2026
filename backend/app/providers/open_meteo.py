@@ -1,6 +1,6 @@
 import httpx
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from app.providers.base import WeatherProvider, ForecastProvider
 from app.schemas.weather import (
     NormalizedWeatherResponse,
@@ -378,27 +378,34 @@ class OpenMeteoProvider(WeatherProvider, ForecastProvider):
         except Exception as e:
             logger.warning(f"Error fetching historical climate data: {e}")
 
-        # Fallback realistic historical observational baseline if network API fails
         if not data_points:
-            base_temp = 28.4
-            for y in range(start_year, current_year):
-                fluct = ((y - start_year) * 0.035) + ((y % 3 - 1) * 0.15)
-                data_points.append(
-                    ClimateDataPoint(
-                        year=y,
-                        label=str(y),
-                        avg_temp=round(base_temp + fluct, 2),
-                        max_temp=round(base_temp + fluct + 7.5, 2),
-                        total_rainfall_mm=round(1100.0 + ((y % 5 - 2) * 120.0), 1),
-                        anomaly=round(fluct, 2),
-                    )
-                )
+            return ClimateTrendResponse(
+                available=False,
+                message="Historical climate data is temporarily unavailable.",
+                location=resolved_name,
+                latitude=resolved_lat,
+                longitude=resolved_lon,
+                period=f"{start_year} - {current_year - 1}",
+                baseline_avg_temp=None,
+                recent_avg_temp=None,
+                temp_change_rate=None,
+                trend_summary="Historical climate data is temporarily unavailable from the upstream provider archive.",
+                data_points=[],
+                source="Open-Meteo Historical Climate Service",
+                provider="Open-Meteo Historical Climate Service",
+                data_type="historical_reanalysis",
+                is_official=False,
+                citation="Historical observational climate reanalysis data. Not a predictive forecast.",
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            )
 
         baseline_val = data_points[0].avg_temp if data_points else 28.0
         recent_val = data_points[-1].avg_temp if data_points else 28.5
         change_rate = round(((recent_val - baseline_val) / max(1, len(data_points))) * 10, 2)
 
         return ClimateTrendResponse(
+            available=True,
+            message=None,
             location=resolved_name,
             latitude=resolved_lat,
             longitude=resolved_lon,
@@ -412,5 +419,9 @@ class OpenMeteoProvider(WeatherProvider, ForecastProvider):
             ),
             data_points=data_points,
             source="Open-Meteo Historical Climate Reanalysis (ERA5 & WMO Archive)",
+            provider="Open-Meteo Historical Climate Service",
+            data_type="historical_reanalysis",
+            is_official=False,
             citation="Verified historical observations from global meteorological reanalysis archives. Clearly separated from predictive forecasts.",
+            timestamp=datetime.now(timezone.utc).isoformat(),
         )

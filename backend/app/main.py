@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import logging
@@ -19,13 +21,27 @@ try:
 except Exception as e:
     logger.warning(f"Database initialization notice: {e}")
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Start background alert polling worker
+    polling_task = asyncio.create_task(alert_service.start_alert_polling_loop())
+    alert_service._polling_task = polling_task
+    logger.info("Alert polling background service spawned.")
+    yield
+    # Shutdown: Stop polling worker cleanly
+    alert_service.stop_alert_polling_loop()
+    logger.info("Alert polling background service shutdown.")
+
+
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description=settings.PROJECT_DESCRIPTION,
     version="1.0.0",
     openapi_url="/api/openapi.json",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # Configure CORS
