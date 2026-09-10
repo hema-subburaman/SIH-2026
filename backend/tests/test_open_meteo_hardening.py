@@ -251,6 +251,7 @@ async def test_open_meteo_persistent_429_serves_stale_cache():
 
 # 7. Endpoint handles UpstreamRateLimitError with 503 instead of 500
 def test_forecast_endpoint_returns_503_on_rate_limit():
+    from app.providers.gfs_provider import GFSProvider
     client = TestClient(app)
 
     with patch.object(
@@ -259,6 +260,15 @@ def test_forecast_endpoint_returns_503_on_rate_limit():
         new_callable=AsyncMock,
         side_effect=UpstreamRateLimitError(
             message="Open-Meteo public service is temporarily rate-limited",
+            retry_after=10,
+            provider="Open-Meteo",
+        ),
+    ), patch.object(
+        GFSProvider,
+        "get_forecast",
+        new_callable=AsyncMock,
+        side_effect=UpstreamRateLimitError(
+            message="GFS fallback also unavailable",
             retry_after=10,
             provider="Open-Meteo",
         ),
