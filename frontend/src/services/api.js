@@ -1,4 +1,5 @@
-const API_BASE = '/api/v1';
+const rawApiBase = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const API_BASE = rawApiBase.endsWith('/') ? rawApiBase.slice(0, -1) : rawApiBase;
 
 export async function fetchCurrentWeather(city = 'Chennai', lat = null, lon = null, provider = null) {
   const params = new URLSearchParams();
@@ -146,14 +147,29 @@ export async function fetchPersonalizedAdvisory(persona = 'general', city = 'Che
 
 /**
  * Resolves the real-time Alert WebSocket URL.
- * - Respects VITE_WS_URL environment variable if provided.
+ * - Respects VITE_WS_URL environment variable if provided (e.g. wss://sih-2026-backend-kdio.onrender.com/ws/alerts).
+ * - If VITE_API_BASE_URL is set to a remote backend (e.g. on Render), automatically derives the WebSocket endpoint.
  * - In local development (localhost / 127.0.0.1), connects directly to the FastAPI
  *   backend on port 8000 (ws://127.0.0.1:8000/ws/alerts), decoupled from the frontend Vite port (5173/5174).
- * - In production/deployment, connects to the current host under ws(s)://<host>/ws/alerts.
+ * - Falls back to current host ws(s)://<host>/ws/alerts.
  */
 export function getAlertsWebSocketUrl() {
   if (import.meta.env?.VITE_WS_URL) {
     return import.meta.env.VITE_WS_URL;
+  }
+
+  // If VITE_API_BASE_URL points to a remote backend (e.g. on Render),
+  // automatically derive the WebSocket endpoint if VITE_WS_URL wasn't explicitly defined.
+  if (import.meta.env?.VITE_API_BASE_URL) {
+    try {
+      const apiUrl = new URL(import.meta.env.VITE_API_BASE_URL, window.location.origin);
+      if (apiUrl.host && apiUrl.hostname !== 'localhost' && apiUrl.hostname !== '127.0.0.1') {
+        const wsProtocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+        return `${wsProtocol}//${apiUrl.host}/ws/alerts`;
+      }
+    } catch (e) {
+      // Fall through to standard resolution
+    }
   }
 
   const isSecure = window.location.protocol === 'https:';
